@@ -48,3 +48,6 @@ CREATE TABLE IF NOT EXISTS GroupMessages (
 
 ALTER TABLE PrivateMessages 
     ADD COLUMN  media LONGBLOB;
+
+ALTER TABLE GroupMessages
+    ADD COLUMN media LONGBLOB;
