@@ -17,7 +17,7 @@ def log_in(clientSocket: socket) -> None:
     username = input("Please enter your username:\t")
     password  = input ("Please enter your password:\t")
     temp = create_temp_user(username, password)
-    send_message(clientSocket, f"{Protocol.initiate_protocol(1)}\n{temp[0]}\n{temp[1]}")
+    send_message(clientSocket, f"{Protocol.initiate_protocol(1)}\n{temp[0]}\n{temp[1]}\n\n")
 
     text = receive_message(clientSocket)
 
@@ -84,7 +84,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
     
 # Will be defined in much more detail later.
 def close_program(clientSocket: socket):
-    send_message(clientSocket, Protocol.initiate_protocol(3))
+    send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
     print("You have successfully closed the program.")
     clientSocket.close()
     quit()
@@ -116,7 +116,7 @@ def main():
 
 # Sends a message to the server for simplicity.
 def send_message(clientSocket: socket, message: str) -> None:
-    clientSocket.send(message.encode())
+    clientSocket.sendall(message.encode())
     pass
 
 # Receives a message from the server.
