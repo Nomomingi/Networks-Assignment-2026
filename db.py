@@ -43,7 +43,7 @@ class DB:
 
 
     def get_all_users(self):
-        self.cursor.execute("SELECT * FROM users")
+        self.cursor.execute("SELECT * FROM Users")
         return self.cursor.fetchall()
     
     def get_user_by_id(self, user_id):
@@ -59,7 +59,7 @@ class DB:
         return self.cursor.fetchmany()
     
     def delete_user(self, user_id, username):
-        self.cursor.execute("DELETE FROM USERS WHERE user_id = %s OR username = %s", (user_id, username))
+        self.cursor.execute("DELETE FROM Users WHERE user_id = %s OR username = %s", (user_id, username))
         return self.connection.commit()
 
 
