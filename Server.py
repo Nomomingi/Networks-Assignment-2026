@@ -28,6 +28,11 @@ def handle_client(connectionSocket: socket, address: tuple):
             elif action == Protocol.initiate_protocol(3): #CLOSE
                 handle_program_close(connectionSocket)
                 break # Stop handling this client
+            elif action == Protocol.initiate_protocol(4): #SEARCH
+                pass # Will be implemented later
+
+            elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
+                handle_get_contacts(connectionSocket, username, db_local)
 
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
@@ -72,6 +77,32 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
     send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
     return u
 
+def handle_get_contacts(connectionSocket: socket, username: str | None, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    try:
+        user_row = db_local.get_user_by_username(username)
+        if not user_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+        user_id = user_row[0]
+
+        contacts = db_local.get_contacts(user_id)
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+        return
+
+    if not contacts:
+        send_message(connectionSocket, "OK|CONTACTS\n\n")
+        return
+
+    lines = ["OK|CONTACTS"]
+    for _contact_id, contact_username in contacts:
+        lines.append(str(contact_username))
+    send_message(connectionSocket, "\n".join(lines) + "\n\n")
+
 def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_CREATE_FORMAT\n\n")
@@ -88,7 +119,7 @@ def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
         send_message(connectionSocket, "OK|SIGNUP_SUCCESSFUL\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|USER_ALREADY_EXISTS\n\n")
-    
+
 # This will be much more important later.
 def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")

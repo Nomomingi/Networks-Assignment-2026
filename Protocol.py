@@ -9,6 +9,7 @@ class Protocol(Enum):
     CLOSE = 3 # For closing the program.
     PRIVATE = 4 # For sending a private message to another user.
     SEARCH = 5
+    CONTACTS = 6
 
 # Returns string representation of a given protocol.
 # TODO: Change name.

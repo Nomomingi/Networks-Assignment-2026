@@ -45,7 +45,7 @@ class DB:
         Returns: 
             bool: Wether the info provided is true of false"""
 
-        self.cursor.execute("SELECT username, user_password FROM Users WHERE username = %s", (username,))
+        self.cursor.execute("SELECT user_id, username, user_password FROM Users WHERE username = %s", (username,))
         user_info = self.cursor.fetchone()
 
         if (username is None or not(username)):
@@ -55,6 +55,9 @@ class DB:
             return True
         return False
 
+    def updated_logged_in_status(self, user_id, status:bool):
+        self.cursor.execute("UPDATE Users SET logged_in = %s WHERE user_id = %s", (status, user_id))
+        return self.connection.commit()
 
     def get_all_users(self):
         self.cursor.execute("SELECT * FROM Users")
@@ -96,13 +99,21 @@ class DB:
         self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE sender_id = %s OR sender_id=%s", (sender_id, reciever_id))
         return self.cursor.fetchall()
     
-    def get_contacts(self, user_id):
-        # this method will get all the contacts of a user, which are the users they have sent messages to or received messages from
-        self.cursor.execute("SELECT DISTINCT sender_id FROM PrivateMessages WHERE receiver_id = %s", (user_id,))
-        sent_contacts = self.cursor.fetchall()
-        self.cursor.execute("SELECT DISTINCT receiver_id FROM PrivateMessages WHERE sender_id = %s", (user_id,))
-        received_contacts = self.cursor.fetchall()
-        return set(sent_contacts + received_contacts)
+    def get_contacts(self, user_id: int):
+        self.cursor.execute(
+            """
+            SELECT DISTINCT u.user_id, u.username
+            FROM PrivateMessages pm
+            JOIN Users u
+              ON u.user_id = CASE
+                WHEN pm.sender_id = %s THEN pm.receiver_id
+                ELSE pm.sender_id
+              END
+            WHERE pm.sender_id = %s OR pm.receiver_id = %s
+            """,
+            (user_id, user_id, user_id),
+        )
+        return self.cursor.fetchall()
 
 
 

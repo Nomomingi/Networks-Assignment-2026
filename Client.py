@@ -81,8 +81,26 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
         print("Wrong number entered. Try again.")
 
 def handle_user_contacts(clientSocket, username) -> None:
-    send_message(clientSocket, f"{Protocol.initiate_protocol()}") # TODO: Check user contacts protocol.
-    # The received message should be a string. A loop is necessary to loop through the entire contact list.
+    send_message(clientSocket, f"{Protocol.initiate_protocol(6)}\n\n")
+
+    packet = receive_packet(clientSocket)
+    if not packet:
+        print("No response from server.")
+        return
+
+    header = packet[0].strip()
+    if header != "OK|CONTACTS":
+        print("Unexpected server message:\t", header)
+        return
+
+    contacts = [line.strip() for line in packet[1:] if line.strip()]
+    if not contacts:
+        print("You have no contacts yet.")
+        return
+
+    print("Your contacts:")
+    for c in contacts:
+        print(c)
 
 def log_out(clientSocket: socket, username: str) -> bool:
     while True:
@@ -168,6 +186,18 @@ def send_message(clientSocket: socket, message: str) -> None:
 # Receives a message from the server.
 def receive_message(clientSocket: socket) -> str:
     return clientSocket.recv(1024).decode()
+
+def receive_packet(clientSocket: socket) -> list:
+    data = ""
+    while True:
+        chunk = clientSocket.recv(1024).decode(errors="ignore")
+        if not chunk:
+            return []
+        data += chunk
+        if "\n\n" in data:
+            break
+    packet = data.split("\n\n")[0]
+    return packet.split("\n")
     
 
 if __name__ == "__main__":
