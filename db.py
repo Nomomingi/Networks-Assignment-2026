@@ -34,8 +34,11 @@ class DB:
 
     # user related methods
     def create_user(self, username, user_password):
+        if (self.get_user_by_username(username)):
+            raise ValueError("User already exists.")
+        
         self.cursor.execute("INSERT INTO Users (username, user_password) VALUES (%s, %s)", (username, user_password))
-        return self.connection.commit()
+        self.connection.commit()
     
     def login_user(self, username:str, password:str):
         """This method will handle user login and verify if the user exists, and if they do, verify whether the provided password matches the password in the db.
@@ -101,10 +104,5 @@ class DB:
         received_contacts = self.cursor.fetchall()
         return set(sent_contacts + received_contacts)
 
-
-
-db = DB(host=HOST, user=USER, password=PASSWORD, port=PORT, database=DATABASE)
-
-print(db.get_contacts(1))
 
 

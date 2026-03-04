@@ -30,8 +30,8 @@ def create_account(clientSocket: socket) -> None:
     username = input("Enter your username:\t")
     password = input("Enter your password:\t")
 
-    send_message(clientSocket, f"{Protocol.initiate_protocol(2)}\n{username}\n{password}")
-
+    send_message(clientSocket, f"{Protocol.initiate_protocol(2)}\n{username}\n{password}\n\n")
+    
     output = receive_message(clientSocket).strip() # Either can't create account due to not being able to access DB, account already exists, etc, OR account is created, with notification.
 
     match output:
