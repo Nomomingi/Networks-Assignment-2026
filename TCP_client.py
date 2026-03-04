@@ -61,11 +61,11 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
             choice = int(input())
             match choice:
                 case 1:
-                    pass
+                    handle_user_contacts(clientSocket, username)
                 case 2:
-                    pass
+                    handle_search()
                 case 3:
-                    pass
+                    handle_group_making()
                 case 4:
                     while True:
                         confirmation = str(input("Are you sure? [Y/n]\n")) 
@@ -73,7 +73,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                             break
 
                     if confirmation.lower() == 'y':
-                        send_message(clientSocket, f"{Protocol.initiate_protocol(1000000)}") # TODO: Log out protocol
+                        send_message(clientSocket, f"{Protocol.initiate_protocol()}") # TODO: Log out protocol
                         print("Logged out successfully.") # May be an issue if not.
                         break # Breaks out of the main while loop.
 
@@ -81,9 +81,36 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
     except ValueError:
         print("Wrong number entered. Try again.")
 
+def handle_user_contacts(clientSocket, username) -> None:
+    send_message(clientSocket, f"{Protocol.initiate_protocol()}") # TODO: Check user contacts protocol.
+    # The received message should be a string. A loop is necessary to loop through the entire contact list.
+
+def handle_search() -> None:
+    while True:
+        search = input("Search for a user (Enter 'Q' or 'Quit' to stop):\t")
+
+        # TODO: Send a 'SEARCH' protocol to the server. It verifies if the user exists. Sends a SEARCH_FAIL or SEARCH_SUCCESS.
+        # If fail, then tell the user to enter a valid username (Client). Else, confirm with the user that they are currently
+        # In a chatroom with the person.
+        if search.lower() in ['quit', 'q']:
+            break
+        
+    pass
+
+def handle_group_making() -> None:
+    while True:
+        members = set()
+        member = input("Enter a username (Enter 'Q' or 'Quit' to stop):\t")
+        if member.lower() in ['quit', 'q']:
+            break
+        members.add(member)
+    
+    # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
+
+    pass
     
 # Will be defined in much more detail later.
-def close_program(clientSocket: socket):
+def close_program(clientSocket: socket) -> None:
     send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
     print("You have successfully closed the program.")
     clientSocket.close()
