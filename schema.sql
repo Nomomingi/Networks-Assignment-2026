@@ -1,3 +1,5 @@
+DROP DATABASE IF EXISTS chat_app;
+
 CREATE DATABASE IF NOT EXISTS chat_app;
 USE chat_app;
 
@@ -47,7 +49,7 @@ CREATE TABLE IF NOT EXISTS GroupMessages (
 );
 
 ALTER TABLE PrivateMessages 
-    ADD COLUMN  media LONGBLOB;
+    ADD COLUMN media LONGBLOB;
 
 ALTER TABLE GroupMessages
     ADD COLUMN media LONGBLOB;
