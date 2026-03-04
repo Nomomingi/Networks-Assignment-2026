@@ -2,46 +2,50 @@ from socket import *
 import Protocol # Custom made, see Protocol.py
 from dataclasses import dataclass
 
-@dataclass(frozen=True)
-class Account:
-    username = str
-    password = str
-
-# This method creates a temporary user whose details will be compared to the details on the server.
-def create_temp_user(username: str,  password: str) -> list:
-    temp = [username, password]
-    return temp
-
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
     username = input("Please enter your username:\t")
     password  = input ("Please enter your password:\t")
-    temp = create_temp_user(username, password)
-    send_message(clientSocket, f"{Protocol.initiate_protocol(1)}\n{temp[0]}\n{temp[1]}\n\n")
 
-    text = receive_message(clientSocket)
+    send_message(clientSocket, f"{Protocol.initiate_protocol(1)}\n{username}\n{password}\n\n")
 
-    print(text)
-    if text == "Would you like to make an account?[Y/n]:\t":
-        confirmation = input()
-        if confirmation.lower() == "y":
-            # send confirmation to create account to server.
-            pass
+    output = receive_message(clientSocket).strip()
 
+    match output:
+        case "OK|LOGIN_SUCCESS":
+            print("Login successful!")
+            load_account_menu(clientSocket, username)
+        case "ERROR|LOGIN_FAILED":
+            print("Login failed. Mismatching username and password.")
+        case "ERROR|INVALID_LOGIN_FORMAT":
+            print("Invalid login format.")
+        case "ERROR|DB_ERROR":
+            print("An error with the database has occured.")
+        case _:
+            print("Unexpected server message:\t", output)
+
+
+# Made independently from the log_in function just for sanity's sake.
 def create_account(clientSocket: socket) -> None:
     username = input("Enter your username:\t")
     password = input("Enter your password:\t")
-    #TODO: Verify that the username does not already exist in the database.
+
     send_message(clientSocket, f"{Protocol.initiate_protocol(2)}\n{username}\n{password}")
 
-    output = receive_message(clientSocket) # Either can't create account due to not being able to access DB, account already exists, etc, OR account is created, with notification.
+    output = receive_message(clientSocket).strip() # Either can't create account due to not being able to access DB, account already exists, etc, OR account is created, with notification.
 
-    if output == Protocol.initiate_protocol(4): #FIXME: Assume CREATE_ACCOUNT_SUCCESS. Will be changed, just waiting for changes on the serverside and the protocol.py.
-        send_message(clientSocket, f"{Protocol.initiate_protocol(2)}\n{username}\n{password}") # Send new user details to the server. Creates an account on the serverside.
-        print("Account has been successfully created. You are now logged in.")
-    elif output == Protocol.initiate_protocol(5): # FIXME: Assume CREATE_ACCOUNT_FAILURE.
-        # TODO: Figure out if a message REALLY needs to be sent.
-        print("Account has not been created due to a possible error.")
+    match output:
+        case "OK|SIGNUP_SUCCESSFUL":
+            print("You have successfully created your account! You are currently logged in.")
+            load_account_menu(clientSocket, username)
+        case "ERROR|USER_ALREADY_EXISTS":
+            print("Someone else is using this username.")
+        case "ERROR|INVALID_CREDENTIALS":
+            print("")
+        case "ERROR|INVALID_CREATE_FORMAT":
+            print(f"Something is wrong with the CREATE request:\t{output}")
+        case _:
+            print("Unexpected server message:\t", output)
     pass
 
 # Loads the data of a newly logged in user to the terminal. This data includes:
@@ -67,15 +71,10 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 case 3:
                     handle_group_making()
                 case 4:
-                    while True:
-                        confirmation = str(input("Are you sure? [Y/n]\n")) 
-                        if confirmation in ['y', 'n']:
-                            break
-
-                    if confirmation.lower() == 'y':
-                        send_message(clientSocket, f"{Protocol.initiate_protocol()}") # TODO: Log out protocol
-                        print("Logged out successfully.") # May be an issue if not.
-                        break # Breaks out of the main while loop.
+                        if log_in(clientSocket):
+                            break # Breaks out of the main while loop in order to get to the Login screen again.
+                case _:
+                    print("Please choose between 1 and 4.")
 
                 
     except ValueError:
@@ -84,6 +83,21 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
 def handle_user_contacts(clientSocket, username) -> None:
     send_message(clientSocket, f"{Protocol.initiate_protocol()}") # TODO: Check user contacts protocol.
     # The received message should be a string. A loop is necessary to loop through the entire contact list.
+
+def log_out(clientSocket: socket, username: str) -> bool:
+    while True:
+        confirmation = str(input("Are you sure? [Y/n]\n")) 
+        if confirmation.lower() in ['y', 'n']:
+            break
+
+    if confirmation.lower() == 'y':
+        send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n") # Log out protocol
+        output = receive_message(clientSocket).strip()
+        if output == "OK|BYE":
+            print("Logged out successfully!")
+            return True
+    return False
+
 
 def handle_search() -> None:
     while True:
@@ -112,9 +126,14 @@ def handle_group_making() -> None:
 # Will be defined in much more detail later.
 def close_program(clientSocket: socket) -> None:
     send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
-    print("You have successfully closed the program.")
-    clientSocket.close()
-    quit()
+
+    output = receive_message(clientSocket).strip()
+    if output == "OK|BYE":
+        print("You have successfully closed the program.")
+        clientSocket.close()
+        quit()
+    else: 
+        print("Strange output message from the server received:\t", output)
     pass
 
 def main():
@@ -137,11 +156,11 @@ def main():
                 close_program(clientSocket)
             else:
                 continue
-        clientSocket.close()
     except ConnectionRefusedError:
-        print("The connection was refused.\nThe server may be offline.")
+        print("The connection was refused.\n" \
+            "The server may be offline.")
 
-# Sends a message to the server for simplicity.
+# Sends a message to the server for simplicity. Good for small messages
 def send_message(clientSocket: socket, message: str) -> None:
     clientSocket.sendall(message.encode())
     pass

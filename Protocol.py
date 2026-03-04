@@ -8,6 +8,7 @@ class Protocol(Enum):
     CREATE = 2  # For account creation.
     CLOSE = 3 # For closing the program.
     PRIVATE = 4 # For sending a private message to another user.
+    SEARCH = 5
 
 # Returns string representation of a given protocol.
 # TODO: Change name.
