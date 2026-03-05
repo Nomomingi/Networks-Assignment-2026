@@ -28,8 +28,8 @@ def handle_client(connectionSocket: socket, address: tuple):
             elif action == Protocol.initiate_protocol(3): #CLOSE
                 handle_program_close(connectionSocket)
                 break # Stop handling this client
-            elif action == Protocol.initiate_protocol(4): #SEARCH
-                pass # Will be implemented later
+            elif action == Protocol.initiate_protocol(4): #PRIVATE
+                handle_private_message(connectionSocket, username, temp, db_local)
 
             elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
                 handle_get_contacts(connectionSocket, username, db_local)
@@ -46,6 +46,10 @@ def handle_client(connectionSocket: socket, address: tuple):
             with online_lock:
                 if online_users.get(username) is connectionSocket:
                     del online_users[username]
+        try:
+            db_local.close()
+        except:
+            pass
         connectionSocket.close() # Close the connection when done
 
 # Handles login requests. 
@@ -72,9 +76,22 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
         return current_user
     
     with online_lock:
+        old = online_users.get(u)
         online_users[u] = connectionSocket
     
     send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
+
+    try:
+        user_info = db_local.get_user_by_username(u)
+        if user_info:
+            user_id = user_info[0]
+            undelivered = db_local.get_undelivered_messages(user_id)
+
+            for message_id, sender_username, message_text in undelivered:
+                send_message(connectionSocket, f"INCOMING_PRIVATE\n{sender_username}\n{message_text}\n\n")
+                db_local.mark_pm_delivered(message_id)
+    except Exception:
+        pass
     return u
 
 def handle_get_contacts(connectionSocket: socket, username: str | None, db_local: DB):
@@ -123,6 +140,44 @@ def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
 # This will be much more important later.
 def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")
+
+def handle_private_message(connectionSocket: socket, sender_username: str | None, temp: list, db_local: DB):
+    if not sender_username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    if len(temp) < 3:
+        send_message(connectionSocket, "ERROR|INVALID_PRIVATE_FORMAT\n\n")
+        return
+
+    receiver_username = temp[1].strip()
+    message_text = temp[2].strip()
+    if not receiver_username or not message_text:
+        send_message(connectionSocket, "ERROR|INVALID_PRIVATE_FORMAT\n\n")
+        return
+    
+    try:
+        sender_info = db_local.get_user_by_username(sender_username)
+        receiver_info = db_local.get_user_by_username(receiver_username)
+        if not receiver_info:
+            send_message(connectionSocket, "ERROR|NO_SUCH_USER\n\n")
+            return
+        if not sender_info:
+            send_message(connectionSocket, "ERROR|SENDER_NOT_FOUND\n\n")
+            return
+        sender_id = sender_info[0]
+        receiver_id = receiver_info[0]
+
+        with online_lock:
+            receiver_socket = online_users.get(receiver_username)
+        if receiver_socket:
+            send_message(receiver_socket, f"INCOMING_PRIVATE\n{sender_username}\n{message_text}\n\n")
+            send_message(connectionSocket, "OK|MESSAGE_SENT\n\n")
+        else:
+            db_local.store_private_message(sender_id, receiver_id, message_text)
+            send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def main():
     serverPort = 12000

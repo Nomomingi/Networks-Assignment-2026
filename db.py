@@ -128,7 +128,7 @@ class DB:
         )
         return self.cursor.fetchall()
     
-    def mark_private_messages_delivered(self, message_id):
+    def mark_pm_delivered(self, message_id):
         self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE message_id = %s", (message_id,))
         self.connection.commit()
     
