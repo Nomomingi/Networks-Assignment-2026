@@ -305,10 +305,10 @@ def main():
     serverSocket.listen(5)
     print("The TCP server is up and running.")
 
-    udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
-    sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
-    udpThread.start()
-    sleepyThread.start()
+    #udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
+    #sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
+    #udpThread.start()
+    #sleepyThread.start()
 
 
     while True:
