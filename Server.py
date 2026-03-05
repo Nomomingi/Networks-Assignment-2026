@@ -144,6 +144,43 @@ def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
 def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")
 
+def handle_private_message(connectionSocket: socket, sender_username: str | None, temp: list, db_local: DB):
+    if not sender_username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    if len(temp) < 3:
+        send_message(connectionSocket, "ERROR|INVALID_PRIVATE_FORMAT\n\n")
+        return
+
+    receiver_username = temp[1].strip()
+    message_text = temp[2].strip()
+    if not receiver_username or not message_text:
+        send_message(connectionSocket, "ERROR|INVALID_PRIVATE_FORMAT\n\n")
+        return
+    
+    try:
+        sender_info = db_local.get_user_by_username(sender_username)
+        receiver_info = db_local.get_user_by_username(receiver_username)
+        if not receiver_info:
+            send_message(connectionSocket, "ERROR|NO_SUCH_USER\n\n")
+            return
+        if not sender_info:
+            send_message(connectionSocket, "ERROR|SENDER_NOT_FOUND\n\n")
+            return
+        sender_id = sender_info[0]
+        receiver_id = receiver_info[0]
+
+        with online_lock:
+            receiver_socket = online_users.get(receiver_username)
+        if receiver_socket:
+            send_message(receiver_socket, f"INCOMING_PRIVATE\n{sender_username}\n{message_text}\n\n")
+            send_message(connectionSocket, "OK|MESSAGE_SENT\n\n")
+        else:
+            db_local.store_private_message(sender_id, receiver_id, message_text)
+            send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 # This is largely for the sake of achieving the 'Ping' effect with our chats.
 # The good thing about this entire scenario is that we only need to store the effect as:
 # PING|Username
