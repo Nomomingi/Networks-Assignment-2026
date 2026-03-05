@@ -1,5 +1,3 @@
-from fileinput import filename
-
 from dotenv import load_dotenv
 import mysql.connector
 import os
@@ -45,15 +43,16 @@ class DB:
         Returns: 
             bool: Wether the info provided is true of false"""
 
-        self.cursor.execute("SELECT user_id, username, user_password FROM Users WHERE username = %s", (username,))
+        self.cursor.execute("SELECT user_password FROM Users WHERE username = %s", (username,))
         user_info = self.cursor.fetchone()
 
-        if (username is None or not(username)):
+        if not user_info:
+            return False
+
+        if not username or not password:
             return False
         
-        if (username and (username == user_info[0] and password == user_info[1])):
-            return True
-        return False
+        return password == user_info[0]
 
     def updated_logged_in_status(self, user_id, status:bool):
         self.cursor.execute("UPDATE Users SET logged_in = %s WHERE user_id = %s", (status, user_id))
@@ -87,16 +86,16 @@ class DB:
     # Message related methods
 
     def store_private_message(self, sender_id, receiver_id, message_text, blob:Blob=None):
-        if (not (blob and message_text)):
+        if not blob and not message_text:
                 raise ValueError("Either message text or file must be provided.")
-        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text) VALUES (%s, %s, %s)", (sender_id, receiver_id, message_text))
-        if (blob):
-            self.cursor.execute("INSERT INTO PrivateMessages (media) VALUES (%s)", (blob,))
+        
+        media_data = blob.convert_to_binary_data() if blob else None
+        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text, media, delivered) VALUES (%s, %s, %s, %s, 0)", (sender_id, receiver_id, message_text, media_data))
         return self.connection.commit()
 
-    def get_private_messages(self, sender_id, reciever_id):
+    def get_private_messages(self, user_a_id, user_b_id):
         # this method will get private messages between two users, sender and reciever
-        self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE sender_id = %s OR sender_id=%s", (sender_id, reciever_id))
+        self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE (sender_id = %s AND receiver_id = %s) OR (sender_id=%s and receiver_id = %s) ORDER BY sent_at ASC", (user_a_id, user_b_id, user_b_id, user_a_id))
         return self.cursor.fetchall()
     
     def get_contacts(self, user_id: int):
@@ -114,6 +113,33 @@ class DB:
             (user_id, user_id, user_id),
         )
         return self.cursor.fetchall()
-
+    
+    def get_undelivered_messages(self, receiver_id):
+        self.cursor.execute(
+            """
+            SELECT pm.message_id, u.username, pm.message_text
+            FROM PrivateMessages pm
+            JOIN Users u
+              ON u.user_id = pm.sender_id
+            WHERE pm.receiver_id = %s AND pm.delivered = 0
+            ORDER BY pm.sent_at ASC
+            """,
+            (receiver_id,)
+        )
+        return self.cursor.fetchall()
+    
+    def mark_pm_delivered(self, message_id):
+        self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE message_id = %s", (message_id,))
+        self.connection.commit()
+    
+    def close(self):
+        try:
+            self.cursor.close()
+        except:
+            pass
+        try:
+            self.connection.close()
+        except:
+            pass
 
 
