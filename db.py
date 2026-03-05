@@ -85,17 +85,24 @@ class DB:
 
     # Message related methods
 
-    def store_private_message(self, sender_id, receiver_id, message_text, blob:Blob=None):
+    def store_private_message(self, sender_id, receiver_id, message_text, blob:Blob=None, delivered: int = 0):
         if not blob and not message_text:
                 raise ValueError("Either message text or file must be provided.")
         
         media_data = blob.convert_to_binary_data() if blob else None
-        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text, media, delivered) VALUES (%s, %s, %s, %s, 0)", (sender_id, receiver_id, message_text, media_data))
-        return self.connection.commit()
+
+        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text, media, delivered) VALUES (%s, %s, %s, %s, %s)",(sender_id, receiver_id, message_text, media_data, delivered))
+        self.connection.commit()
+        return self.cursor.lastrowid
+
+    # def get_private_messages(self, user_a_id, user_b_id):
+    #     # this method will get private messages between two users, sender and reciever
+    #     self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE (sender_id = %s AND receiver_id = %s) OR (sender_id=%s and receiver_id = %s) ORDER BY sent_at ASC", (user_a_id, user_b_id, user_b_id, user_a_id))
+    #     return self.cursor.fetchall()
 
     def get_private_messages(self, user_a_id, user_b_id):
         # this method will get private messages between two users, sender and reciever
-        self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE (sender_id = %s AND receiver_id = %s) OR (sender_id=%s and receiver_id = %s) ORDER BY sent_at ASC", (user_a_id, user_b_id, user_b_id, user_a_id))
+        self.cursor.execute("SELECT u.username, pm.message_text, pm.sent_at FROM PrivateMessages pm JOIN Users u ON u.user_id = pm.sender_id WHERE (pm.sender_id = %s AND pm.receiver_id = %s) OR (pm.sender_id = %s AND pm.receiver_id = %s) ORDER BY pm.sent_at ASC",(user_a_id, user_b_id, user_b_id, user_a_id),)
         return self.cursor.fetchall()
     
     def get_contacts(self, user_id: int):
@@ -131,15 +138,19 @@ class DB:
     def mark_pm_delivered(self, message_id):
         self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE message_id = %s", (message_id,))
         self.connection.commit()
+
+    def mark_pm_delivered_between(self, sender_id, receiver_id):
+        self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE sender_id = %s AND receiver_id = %s AND delivered = 0",(sender_id, receiver_id),)
+        self.connection.commit()
     
     def close(self):
         try:
             self.cursor.close()
-        except:
-            pass
+        except Exception as e:
+            print("Error: ", e)
         try:
             self.connection.close()
-        except:
-            pass
+        except Exception as e:
+            print("Error: ", e)
 
 

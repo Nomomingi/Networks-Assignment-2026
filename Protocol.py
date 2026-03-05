@@ -11,6 +11,8 @@ class Protocol(Enum):
     SEARCH = 5
     CONTACTS = 6
     PING = 7 # For the UDP pinging.
+    OPEN_CHAT = 7
+    CLOSE_CHAT = 8
 
 # Returns string representation of a given protocol.
 # TODO: Change name.

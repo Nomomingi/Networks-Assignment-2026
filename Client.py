@@ -1,6 +1,7 @@
 from socket import *
 import Protocol # Custom made, see Protocol.py
 from dataclasses import dataclass
+import threading
 
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
@@ -99,8 +100,82 @@ def handle_user_contacts(clientSocket, username) -> None:
         return
 
     print("Your contacts:")
-    for c in contacts:
-        print(c)
+    for i, c in enumerate(contacts, start=1):
+        print(f"{i}) {c}")
+
+    selection = input("Select a contact number to chat, or press Enter to go back: ").strip()
+    if not selection:
+        return
+
+    try:
+        idx = int(selection) 
+    except ValueError:
+        print("Invalid selection.")
+        return
+
+    if idx < 1 or idx > len(contacts):
+        print("Invalid selection.")
+        return
+
+    peer_username = contacts[idx - 1]
+    start_private_chat(clientSocket, username, peer_username)
+
+def start_private_chat(clientSocket: socket, my_username, peer_username):
+    send_message(clientSocket, f"{Protocol.initiate_protocol(7)}\n{peer_username}\n\n")
+    packet = receive_packet(clientSocket)
+    if not packet:
+        print("No response from server.")
+        return
+
+    header = packet[0].strip()
+    if header == "ERROR|NO_SUCH_USER":
+        print("No such user.")
+        return
+    if header == "ERROR|DB_ERROR":
+        print("Database error.")
+        return
+    if header != "OK|CHAT_HISTORY":
+        print("Unexpected server message:\t", header)
+        return
+
+    print(f"--- Chat with {peer_username} (type /exit to leave) ---")
+    for line in packet[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            sender, msg, ts = parts
+            print(f"[{ts}] {sender}: {msg}")
+
+    stop_event = threading.Event()
+
+    def receiver_loop():
+        while not stop_event.is_set():
+            incoming = receive_packet(clientSocket)
+            if not incoming:
+                break
+            kind = incoming[0].strip()
+            if kind == "INCOMING_PRIVATE" and len(incoming) >= 3:
+                sender = incoming[1].strip()
+                msg = incoming[2].strip()
+                if sender == peer_username:
+                    print(f"{peer_username}: {msg}")
+            
+    t = threading.Thread(target=receiver_loop, daemon=True)
+    t.start()
+
+    try:
+        while True:
+            msg = input("you> ")
+            if msg.strip() == "/exit":
+                break
+            if not msg.strip():
+                continue
+            send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
+    finally:
+        stop_event.set()
+        send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
 
 def log_out(clientSocket: socket, username: str) -> bool:
     while True:

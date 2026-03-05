@@ -7,6 +7,8 @@ import time
 online_users = {} # A dictionary to store the online users, and their sockets as a value.
 users_last_seen = {} # A dictionary to store when last they were seen on the server.
 online_lock = threading.Lock()
+active_chats = {}
+chat_lock = threading.Lock()
 SLEEPY_TIME = 20 # Constant for the time taken for a user to sleep.
 
 # Handles one connected client. Each client is run in its own thread
@@ -33,6 +35,12 @@ def handle_client(connectionSocket: socket, address: tuple):
             elif action == Protocol.initiate_protocol(4): #PRIVATE
                 handle_private_message(connectionSocket, username, temp, db_local)
 
+            elif action == Protocol.initiate_protocol(7): #OPEN_CHAT
+                handle_open_chat(connectionSocket, username, temp, db_local)
+
+            elif action == Protocol.initiate_protocol(8): #CLOSE_CHAT
+                handle_close_chat(connectionSocket, username, temp)
+
             elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
                 handle_get_contacts(connectionSocket, username, db_local)
 
@@ -48,6 +56,9 @@ def handle_client(connectionSocket: socket, address: tuple):
             with online_lock:
                 if online_users.get(username) is connectionSocket:
                     del online_users[username]
+            with chat_lock:
+                if username in active_chats:
+                    del active_chats[username]
         try:
             db_local.close()
         except:
@@ -69,7 +80,8 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
     
     try:
         ok = db_local.login_user(u, p)
-    except Exception:
+    except Exception as e:
+        print("OPEN_CHAT error:", e)
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
         return current_user
     
@@ -83,19 +95,54 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
         users_last_seen[u] = time.time() # The current time.
     
     send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
+    return u
+
+def handle_open_chat(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    if len(temp) < 2:
+        send_message(connectionSocket, "ERROR|INVALID_OPEN_CHAT_FORMAT\n\n")
+        return
+
+    peer_username = temp[1].strip()
+    if not peer_username:
+        send_message(connectionSocket, "ERROR|INVALID_OPEN_CHAT_FORMAT\n\n")
+        return
 
     try:
-        user_info = db_local.get_user_by_username(u)
-        if user_info:
-            user_id = user_info[0]
-            undelivered = db_local.get_undelivered_messages(user_id)
+        user_row = db_local.get_user_by_username(username)
+        peer_row = db_local.get_user_by_username(peer_username)
+        if not user_row or not peer_row:
+            send_message(connectionSocket, "ERROR|NO_SUCH_USER\n\n")
+            return
 
-            for message_id, sender_username, message_text in undelivered:
-                send_message(connectionSocket, f"INCOMING_PRIVATE\n{sender_username}\n{message_text}\n\n")
-                db_local.mark_pm_delivered(message_id)
+        user_id = user_row[0]
+        peer_id = peer_row[0]
+
+        with chat_lock:
+            active_chats[username] = peer_username
+
+        history = db_local.get_private_messages(user_id, peer_id)
+
+        lines = ["OK|CHAT_HISTORY"]
+        for sender_name, message_text, sent_at in history:
+            lines.append(f"{sender_name}|{message_text}|{sent_at}")
+        send_message(connectionSocket, "\n".join(lines) + "\n\n")
+
+        db_local.mark_pm_delivered_between(peer_id, user_id)
     except Exception:
-        pass
-    return u
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_close_chat(connectionSocket: socket, username: str | None, temp: list):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    with chat_lock:
+        if username in active_chats:
+            del active_chats[username]
+    send_message(connectionSocket, "OK|CHAT_CLOSED\n\n")
 
 def handle_get_contacts(connectionSocket: socket, username: str | None, db_local: DB):
     if not username:
@@ -171,13 +218,19 @@ def handle_private_message(connectionSocket: socket, sender_username: str | None
         sender_id = sender_info[0]
         receiver_id = receiver_info[0]
 
+        message_id = db_local.store_private_message(sender_id, receiver_id, message_text, delivered=0)
+
         with online_lock:
             receiver_socket = online_users.get(receiver_username)
-        if receiver_socket:
+        should_push = False
+        with chat_lock:
+            should_push = active_chats.get(receiver_username) == sender_username
+
+        if receiver_socket and should_push:
             send_message(receiver_socket, f"INCOMING_PRIVATE\n{sender_username}\n{message_text}\n\n")
+            db_local.mark_pm_delivered(message_id)
             send_message(connectionSocket, "OK|MESSAGE_SENT\n\n")
         else:
-            db_local.store_private_message(sender_id, receiver_id, message_text)
             send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
