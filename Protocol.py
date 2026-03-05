@@ -10,6 +10,7 @@ class Protocol(Enum):
     PRIVATE = 4 # For sending a private message to another user.
     SEARCH = 5
     CONTACTS = 6
+    PING = 7 # For the UDP pinging.
 
 # Returns string representation of a given protocol.
 # TODO: Change name.

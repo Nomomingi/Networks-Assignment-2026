@@ -57,3 +57,7 @@ ALTER TABLE GroupMessages
 -- We make text message nullable to allow for messages that only contain media (like images or videos) without any accompanying text.
 ALTER TABLE PrivateMessages
     MODIFY COLUMN message_text TEXT NULL;
+
+ALTER TABLE PrivateMessages
+    ADD COLUMN delivered TINYINT(1) NOT NULL DEFAULT 0,
+    ADD COLUMN delivered_at TIMESTAMP NULL;
