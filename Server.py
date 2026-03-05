@@ -20,6 +20,11 @@ def handle_client(connectionSocket: socket, address: tuple):
             temp = receive_packet(connectionSocket) # Reads the entire message from the client
             if not temp: # If client provides no response. connection terminated
                 break
+
+            if username:
+                with online_lock:
+                    if username in users_last_seen:
+                        users_last_seen[username] = time.time()
     
             action = temp[0].strip() # Tells the server what action the user wants to perform
             
