@@ -10,4 +10,8 @@ requirements:
 env:
 	echo "HOST=localhost\nPORT=3306\nDB_USER=root\nPASSWORD=\nDATABASE=chat_app" > .env
 
-.phoney: seed db
+server:
+	python3 Server.py &\
+	ngrok tcp 14532
+
+.phoney: seed db server requirements env
