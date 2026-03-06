@@ -26,7 +26,8 @@ class DB:
             user=user,
             password=password,
             database=database,
-            port=port
+            port=port,
+            autocommit=True
         )
         self.cursor = self.connection.cursor()
 
