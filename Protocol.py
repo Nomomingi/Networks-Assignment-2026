@@ -13,6 +13,8 @@ class Protocol(Enum):
     PING = 7 # For the UDP pinging.
     OPEN_CHAT = 8
     CLOSE_CHAT = 9
+    SEND_BLOB= 10
+    RECIEVE_BLOB = 11
 
 # Returns string representation of a given protocol.
 # TODO: Change name.
