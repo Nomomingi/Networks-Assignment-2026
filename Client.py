@@ -2,6 +2,7 @@ from socket import *
 import Protocol # Custom made, see Protocol.py
 from dataclasses import dataclass
 import threading
+import p2p
 
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
@@ -230,7 +231,8 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
                 break
             kind = incoming[0].strip()
 
-            if kind in ("OK|MESSAGE_SENT", "OK|PRIVATE_STORED", "OK|CHAT_CLOSED"):
+            if kind in ("OK|MESSAGE_SENT", "OK|PRIVATE_STORED", "OK|CHAT_CLOSED",
+                        "OK|BLOB_NOTIFY_SENT", "ERROR|PEER_OFFLINE", "ERROR|NOTIFY_FAILED"):
                 continue
 
             if kind == "INCOMING_PRIVATE" and len(incoming) >= 3:
@@ -240,6 +242,21 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
                 sys.stdout.write("\r\033[K")   # move to line start, clear it
                 print(f"{sender}: {msg}")
                 reprint_prompt()
+
+            elif kind == "BLOB_OFFER" and len(incoming) >= 5:
+                # BLOB_OFFER\n<sender>\n<ngrok_host>\n<ngrok_port>\n<filename>
+                blob_sender   = incoming[1].strip()
+                blob_host     = incoming[2].strip()
+                blob_port     = int(incoming[3].strip())
+                blob_filename = incoming[4].strip()
+                sys.stdout.write("\r\033[K")
+                print(f"[File incoming from {blob_sender}: '{blob_filename}']")
+                reprint_prompt()
+                threading.Thread(
+                    target=p2p.receive_blob,
+                    args=(blob_host, blob_port, blob_filename),
+                    daemon=True
+                ).start()
 
     t = threading.Thread(target=receiver_loop, daemon=True)
     t.start()
@@ -263,6 +280,12 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
                 sys.stdout.write("\r\033[K")  # clear the input line
                 if msg.strip() == "/exit":
                     break
+                if msg.strip().startswith("/sendfile "):
+                    file_path = msg.strip()[len("/sendfile "):].strip()
+                    p2p.send_blob(file_path, clientSocket, my_username, peer_username)
+                    sys.stdout.write("\ryou> ")
+                    sys.stdout.flush()
+                    continue
                 if msg.strip():
                     print(f"you>: {msg}")  # echo sent message as a chat line
                     send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
@@ -378,8 +401,8 @@ def close_program(clientSocket: socket) -> None:
 
 def main():
     try:
-        serverName = '6.tcp.eu.ngrok.io' # ======================================================================================================================
-        serverPort = 19181
+        serverName = '0.tcp.eu.ngrok.io' # ======================================================================================================================
+        serverPort = 10253
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))
         while True:

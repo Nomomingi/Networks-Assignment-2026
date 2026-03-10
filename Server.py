@@ -52,6 +52,9 @@ def handle_client(connectionSocket: socket, address: tuple):
             elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
                 handle_get_contacts(connectionSocket, username, db_local)
 
+            elif action == Protocol.initiate_protocol(10): #SEND_BLOB - relay ngrok address to recipient
+                handle_send_blob(connectionSocket, username, temp)
+
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
@@ -267,6 +270,52 @@ def handle_private_message(connectionSocket: socket, sender_username: str | None
             send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+def handle_send_blob(connectionSocket: socket, sender_username: str | None, temp: list):
+    """
+    Pure signaling relay — the server never sees file data.
+    Reads the sender's public ngrok host/port and pushes a BLOB_OFFER to the
+    recipient's already-open main TCP socket so they can connect directly.
+
+    Expected packet from sender:
+        SEND_BLOB
+        <sender_username>
+        <peer_username>
+        <filename>
+        <ngrok_host>          e.g. 0.tcp.eu.ngrok.io
+        <ngrok_port>          e.g. 12345
+    """
+    if not sender_username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 6:
+        send_message(connectionSocket, "ERROR|INVALID_BLOB_FORMAT\n\n")
+        return
+
+    peer_username = temp[2].strip()
+    filename      = temp[3].strip()
+    ngrok_host    = temp[4].strip()
+    ngrok_port    = temp[5].strip()
+
+    if not peer_username or not filename or not ngrok_host or not ngrok_port:
+        send_message(connectionSocket, "ERROR|INVALID_BLOB_FORMAT\n\n")
+        return
+
+    with online_lock:
+        recipient_socket = online_users.get(peer_username)
+
+    if not recipient_socket:
+        send_message(connectionSocket, "ERROR|PEER_OFFLINE\n\n")
+        return
+
+    try:
+        send_message(recipient_socket,
+                     f"BLOB_OFFER\n{sender_username}\n{ngrok_host}\n{ngrok_port}\n{filename}\n\n")
+        send_message(connectionSocket, "OK|BLOB_NOTIFY_SENT\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|NOTIFY_FAILED\n\n")
+
+
 # This is largely for the sake of achieving the 'Ping' effect with our chats.
 # The good thing about this entire scenario is that we only need to store the effect as:
 # PING|Username
