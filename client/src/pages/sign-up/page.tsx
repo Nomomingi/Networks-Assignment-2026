@@ -29,6 +29,7 @@ export default function SignUp() {
         <>
             <div className={styles.container}>
                 <div className={styles.header}>Sign Up</div>
+                <div className={styles.subtitle}>&gt;&gt; create an account &lt;&lt;</div>
                 <form className={styles.col} onSubmit={handleSubmit}>
                     <input
                         className={styles.input}
@@ -46,12 +47,12 @@ export default function SignUp() {
                         onChange={e => setPassword(e.target.value)}
                         required
                     />
-                    {error && <p style={{ color: 'red', margin: 0 }}>{error}</p>}
+                    {error && <p className={styles.error}>{error}</p>}
                     <button className={styles.button} type="submit" disabled={loading}>
                         {loading ? 'Creating account…' : 'Sign Up'}
                     </button>
                 </form>
-                <p>
+                <p className={styles.footer}>
                     Already have an account? <Link to="/login">Log In</Link>
                 </p>
             </div>

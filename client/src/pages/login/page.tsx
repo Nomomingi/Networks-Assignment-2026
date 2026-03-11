@@ -29,6 +29,7 @@ const Login = () => {
         <>
             <div className={styles.container}>
                 <div className={styles.header}>Login</div>
+                <div className={styles.subtitle}>&gt;&gt; enter credentials &lt;&lt;</div>
                 <form className={styles.col} onSubmit={handleSubmit}>
                     <input
                         className={styles.input}
@@ -46,12 +47,12 @@ const Login = () => {
                         onChange={e => setPassword(e.target.value)}
                         required
                     />
-                    {error && <p style={{ color: 'red', margin: 0 }}>{error}</p>}
+                    {error && <p className={styles.error}>{error}</p>}
                     <button className={styles.button} type="submit" disabled={loading}>
                         {loading ? 'Logging in…' : 'Login'}
                     </button>
                 </form>
-                <p>
+                <p className={styles.footer}>
                     Don't have an account? <Link to="/sign-up">Sign Up</Link>
                 </p>
             </div>
