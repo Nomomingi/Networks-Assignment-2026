@@ -267,6 +267,7 @@ def handle_private_message(connectionSocket: socket, sender_username: str | None
             send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
 # This is largely for the sake of achieving the 'Ping' effect with our chats.
 # The good thing about this entire scenario is that we only need to store the effect as:
 # PING|Username
@@ -280,6 +281,7 @@ def udp_server() -> None:
         message = temp.decode().strip().split("|")
         if message[0] == Protocol.initiate_protocol(7): # PING
             username = message[1]
+            print(f"Username [{username}] pinged at [{time.time()}]")
             with online_lock:
                 if username in users_last_seen:
                     users_last_seen[username] = time.time()
