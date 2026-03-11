@@ -17,4 +17,8 @@ server:
 free_server_port:
 	lsof -i:14532 -t | xargs kill -9
 
+bridge:
+	python3 api_bridge.py
+client:
+	cd client && npm i && npm run dev
 .phoney: seed db server requirements env
