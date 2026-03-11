@@ -1,0 +1,24 @@
+# Copy this file to ~/.config/ngrok/ngrok.yml and fill in your authtoken.
+# Get a free authtoken at https://dashboard.ngrok.com/get-started/your-authtoken
+#
+# Then run:  ngrok start --all
+# This starts ALL tunnels in one session (free tier compatible).
+
+version: "2"
+authtoken: 2AqQLeC8yDxFxHKyjTcnDNNhj3O_3zKWeZsk9GCsARCdLcD9b
+
+tunnels:
+  # Main TCP chat server
+  tcp_server:
+    proto: tcp
+    addr: 14532
+
+  # HTTP/WebSocket bridge (REST API + real-time WS)
+  bridge:
+    proto: http
+    addr: 8000
+
+  # React web client (Vite dev server)
+  client:
+    proto: http
+    addr: 5173

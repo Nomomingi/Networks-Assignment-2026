@@ -8,6 +8,9 @@ load_dotenv()  # make sure NGROK_AUTHTOKEN from .env is in the environment
 
 CHUNK_SIZE = 65_536  # 64 KB per chunk
 
+# All received files land here; directory is created on first use.
+SAVE_DIR = os.path.expanduser("~/Downloads/group81")
+
 
 def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str) -> None:
     """
@@ -84,13 +87,23 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
     threading.Thread(target=_stream, daemon=True).start()
 
 
-def receive_blob(host: str, port: int, filename: str) -> None:
+def receive_blob(host: str, port: int, filename: str) -> str | None:
     """
     Connects directly to the sender's ngrok TCP tunnel and saves the incoming
-    blob as 'received_<filename>' in the current directory.
+    blob to ~/Downloads/group81/. Returns the full save path on success, None on error.
     """
     from socket import socket as _socket, AF_INET, SOCK_STREAM
-    save_path = f"received_{filename}"
+
+    os.makedirs(SAVE_DIR, exist_ok=True)
+
+    # Avoid overwriting existing files by appending a counter
+    base, ext = os.path.splitext(filename)
+    save_path = os.path.join(SAVE_DIR, filename)
+    counter = 1
+    while os.path.exists(save_path):
+        save_path = os.path.join(SAVE_DIR, f"{base}_{counter}{ext}")
+        counter += 1
+
     try:
         sock = _socket(AF_INET, SOCK_STREAM)
         sock.connect((host, port))
@@ -111,8 +124,10 @@ def receive_blob(host: str, port: int, filename: str) -> None:
                 f.write(data)
         sock.close()
         print(f"[P2P] Saved: {save_path}")
+        return save_path
     except Exception as e:
         print(f"[P2P] Receive error: {e}")
+        return None
 
 
 def _recv_exact(sock, n: int) -> bytes | None:

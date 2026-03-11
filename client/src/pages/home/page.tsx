@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth-context';
 import styles from './index.module.css';
 
-const API = 'http://localhost:8000';
-const WS_URL = 'ws://localhost:8000/ws';
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -11,6 +11,9 @@ interface ChatMessage {
     sender: string;
     text: string;
     ts: string;
+    kind?: 'text' | 'file_incoming' | 'file_received' | 'file_error';
+    filename?: string;
+    path?: string;
 }
 
 // ─── Component ────────────────────────────────────────────────────
@@ -26,10 +29,12 @@ const Home = () => {
     const [history, setHistory] = useState<ChatMessage[]>([]);
     const [inputText, setInputText] = useState('');
     const [loadingChat, setLoadingChat] = useState(false);
+    const [sendingFile, setSendingFile] = useState(false);
 
     const messagesRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // ── Load contacts on mount ──────────────────────────────────────
     useEffect(() => {
@@ -50,20 +55,45 @@ const Home = () => {
         ws.onmessage = (ev) => {
             try {
                 const msg = JSON.parse(ev.data);
+                const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
                 if (msg.type === 'message') {
-                    const newMsg: ChatMessage = {
-                        sender: msg.from,
-                        text: msg.text,
-                        ts: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-                    };
-                    setHistory(prev => {
-                        // Only show if we're in that chat (or always show & let user notice)
-                        return [...prev, newMsg];
-                    });
-                    // Add to contacts if not already there
+                    setHistory(prev => [...prev, {
+                        sender: msg.from, text: msg.text, ts: now, kind: 'text',
+                    }]);
                     setContacts(prev =>
                         prev.includes(msg.from) ? prev : [msg.from, ...prev]
                     );
+
+                } else if (msg.type === 'file_incoming') {
+                    setHistory(prev => [...prev, {
+                        sender: msg.from, text: '', ts: now,
+                        kind: 'file_incoming', filename: msg.filename,
+                    }]);
+
+                } else if (msg.type === 'file_received') {
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        for (let i = updated.length - 1; i >= 0; i--) {
+                            if (updated[i].kind === 'file_incoming' && updated[i].filename === msg.filename) {
+                                updated[i] = { ...updated[i], kind: 'file_received', path: msg.path };
+                                break;
+                            }
+                        }
+                        return updated;
+                    });
+
+                } else if (msg.type === 'file_error') {
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        for (let i = updated.length - 1; i >= 0; i--) {
+                            if (updated[i].kind === 'file_incoming' && updated[i].filename === msg.filename) {
+                                updated[i] = { ...updated[i], kind: 'file_error' };
+                                break;
+                            }
+                        }
+                        return updated;
+                    });
                 }
             } catch { /* ignore */ }
         };
@@ -160,6 +190,61 @@ const Home = () => {
                 body: JSON.stringify({ user, peer: activePeer, text }),
             });
         } catch { /* ignore */ }
+    };
+
+    // ── Send file ──────────────────────────────────────────────────
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !activePeer || !user) return;
+        e.target.value = '';   // reset picker
+
+        setSendingFile(true);
+        // Optimistic: show a "sending" entry
+        setHistory(prev => [...prev, {
+            sender: user,
+            text: '',
+            ts: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+            kind: 'file_incoming',
+            filename: file.name,
+        }]);
+
+        const form = new FormData();
+        form.append('user', user);
+        form.append('peer', activePeer);
+        form.append('file', file, file.name);
+
+        try {
+            const r = await fetch(`${API}/api/send-file`, { method: 'POST', body: form });
+            const d = await r.json();
+            if (r.ok) {
+                // Update optimistic entry to show sent
+                setHistory(prev => {
+                    const updated = [...prev];
+                    for (let i = updated.length - 1; i >= 0; i--) {
+                        if (updated[i].kind === 'file_incoming' && updated[i].filename === file.name) {
+                            updated[i] = { ...updated[i], kind: 'file_received', path: '(sent)' };
+                            break;
+                        }
+                    }
+                    return updated;
+                });
+            } else {
+                setHistory(prev => {
+                    const updated = [...prev];
+                    for (let i = updated.length - 1; i >= 0; i--) {
+                        if (updated[i].kind === 'file_incoming' && updated[i].filename === file.name) {
+                            updated[i] = { ...updated[i], kind: 'file_error', text: d.error ?? 'Send failed' };
+                            break;
+                        }
+                    }
+                    return updated;
+                });
+            }
+        } catch {
+            /* ignore */
+        } finally {
+            setSendingFile(false);
+        }
     };
 
     // ── Logout ─────────────────────────────────────────────────────
@@ -273,13 +358,48 @@ const Home = () => {
                                         <span className={`${styles.msgSender} ${m.sender === user ? styles.mine : styles.theirs}`}>
                                             {m.sender}:
                                         </span>
-                                        <span className={styles.msgText}>{m.text}</span>
+                                        {(!m.kind || m.kind === 'text') && (
+                                            <span className={styles.msgText}>{m.text}</span>
+                                        )}
+                                        {m.kind === 'file_incoming' && (
+                                            <span className={styles.msgFile}>
+                                                📎 {m.filename} <span className={styles.fileStatus}>— transferring…</span>
+                                            </span>
+                                        )}
+                                        {m.kind === 'file_received' && (
+                                            <span className={styles.msgFile}>
+                                                ✓ {m.filename}
+                                                {m.path && m.path !== '(sent)' && <span className={styles.fileStatus}> — saved to {m.path}</span>}
+                                                {m.path === '(sent)' && <span className={styles.fileStatus}> — sent ✓</span>}
+                                            </span>
+                                        )}
+                                        {m.kind === 'file_error' && (
+                                            <span className={`${styles.msgFile} ${styles.fileErr}`}>
+                                                ✗ {m.filename} — {m.text || 'transfer failed'}
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
                             </div>
 
                             {/* Input */}
                             <form className={styles.inputBar} onSubmit={sendMessage}>
+                                {/* Hidden file input */}
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    style={{ display: 'none' }}
+                                    onChange={handleFileSelect}
+                                />
+                                <button
+                                    type="button"
+                                    className={styles.attachBtn}
+                                    title="Send a file"
+                                    disabled={sendingFile}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    {sendingFile ? '…' : '📎'}
+                                </button>
                                 <input
                                     type="text"
                                     placeholder="> type a message..."

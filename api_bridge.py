@@ -19,7 +19,15 @@ Endpoints:
 import asyncio
 import json
 import os
+import struct
+import socket as _rawsocket
+import tempfile
 from aiohttp import web
+import p2p
+import ngrok as _ngrok
+from dotenv import load_dotenv
+
+load_dotenv()
 
 TCP_HOST     = os.getenv("CHAT_SERVER_HOST", "127.0.0.1")
 TCP_PORT     = int(os.getenv("CHAT_SERVER_PORT", "14532"))
@@ -63,7 +71,7 @@ class ChatSession:
                     packet = packet.strip()
                     if not packet:
                         continue
-                    if packet.startswith("INCOMING_PRIVATE"):
+                    if packet.startswith("INCOMING_PRIVATE") or packet.startswith("BLOB_OFFER"):
                         await self.push_queue.put(packet)
                     else:
                         await self.response_queue.put(packet)
@@ -335,16 +343,48 @@ async def handle_ws(req: web.Request) -> web.WebSocketResponse:
     print(f"[Bridge] WS connected for {u}")
 
     async def forward_pushes():
+        loop = asyncio.get_event_loop()
         while not ws.closed:
             try:
                 packet = await asyncio.wait_for(sess.push_queue.get(), timeout=1.0)
                 parts  = packet.split("\n")
+
                 if parts[0] == "INCOMING_PRIVATE" and len(parts) >= 3:
                     await ws.send_str(json.dumps({
                         "type": "message",
                         "from": parts[1].strip(),
                         "text": parts[2].strip(),
                     }))
+
+                elif parts[0] == "BLOB_OFFER" and len(parts) >= 5:
+                    sender   = parts[1].strip()
+                    host     = parts[2].strip()
+                    port     = int(parts[3].strip())
+                    filename = parts[4].strip()
+                    # Notify browser immediately
+                    await ws.send_str(json.dumps({
+                        "type": "file_incoming",
+                        "from": sender,
+                        "filename": filename,
+                    }))
+                    # Download in background, then notify when done
+                    async def _do_receive(h=host, p=port, fn=filename, s=sender):
+                        save_path = await loop.run_in_executor(None, p2p.receive_blob, h, p, fn)
+                        if save_path:
+                            await ws.send_str(json.dumps({
+                                "type": "file_received",
+                                "from": s,
+                                "filename": fn,
+                                "path": save_path,
+                            }))
+                        else:
+                            await ws.send_str(json.dumps({
+                                "type": "file_error",
+                                "from": s,
+                                "filename": fn,
+                            }))
+                    asyncio.create_task(_do_receive())
+
             except asyncio.TimeoutError:
                 continue
             except Exception:
@@ -357,6 +397,99 @@ async def handle_ws(req: web.Request) -> web.WebSocketResponse:
     fwd.cancel()
     print(f"[Bridge] WS disconnected for {u}")
     return ws
+
+
+async def handle_send_file(req: web.Request) -> web.Response:
+    """
+    Accepts a multipart upload (fields: user, peer, file), opens an ngrok TCP
+    tunnel, notifies the server, then streams the file P2P to the recipient.
+    """
+    reader   = await req.multipart()
+    user = peer = filename = None
+    file_data = b""
+
+    async for field in reader:
+        if field.name == "user":
+            user = (await field.read()).decode().strip()
+        elif field.name == "peer":
+            peer = (await field.read()).decode().strip()
+        elif field.name == "file":
+            filename  = field.filename
+            file_data = await field.read()
+
+    if not all([user, peer, filename, file_data]):
+        return err_json("Missing fields: user, peer, file", 400)
+
+    sess = _require_session(user)
+    if isinstance(sess, web.Response):
+        return sess
+
+    # Save the upload to a temp file so the streaming thread has a path
+    tmp_path = os.path.join(tempfile.gettempdir(), filename)
+    with open(tmp_path, "wb") as f:
+        f.write(file_data)
+
+    # Open a local listener on a free port
+    listener = _rawsocket.socket(_rawsocket.AF_INET, _rawsocket.SOCK_STREAM)
+    listener.setsockopt(_rawsocket.SOL_SOCKET, _rawsocket.SO_REUSEADDR, 1)
+    listener.bind(("", 0))
+    local_port = listener.getsockname()[1]
+    listener.listen(1)
+
+    authtoken = os.getenv("NGROK_AUTHTOKEN_P2P") or os.getenv("NGROK_AUTHTOKEN")
+    if not authtoken:
+        listener.close()
+        return err_json("NGROK_AUTHTOKEN not set in .env", 500)
+
+    loop = asyncio.get_event_loop()
+    try:
+        tunnel = await loop.run_in_executor(
+            None,
+            lambda: _ngrok.forward(local_port, proto="tcp", authtoken=authtoken)
+        )
+    except Exception as e:
+        listener.close()
+        return err_json(f"Could not open ngrok tunnel: {e}", 502)
+
+    public_url  = tunnel.url()                         # tcp://X.tcp.ngrok.io:PORT
+    host_port   = public_url.replace("tcp://", "")
+    ngrok_host, ngrok_port = host_port.rsplit(":", 1)
+
+    # Tell the server to relay the address to the peer
+    resp = await sess.command(
+        f"SEND_BLOB\n{user}\n{peer}\n{filename}\n{ngrok_host}\n{ngrok_port}\n\n"
+    )
+    if resp != "OK|BLOB_NOTIFY_SENT":
+        listener.close()
+        _ngrok.disconnect(public_url)
+        return err_json(f"Server error: {resp}", 502)
+
+    # Stream file to recipient in background
+    async def _stream():
+        try:
+            conn, _ = await loop.run_in_executor(None, listener.accept)
+            with open(tmp_path, "rb") as f:
+                while True:
+                    chunk = f.read(p2p.CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    await loop.run_in_executor(
+                        None, conn.sendall, struct.pack(">I", len(chunk)) + chunk
+                    )
+            await loop.run_in_executor(None, conn.sendall, struct.pack(">I", 0))
+            conn.close()
+            print(f"[Bridge] '{filename}' sent to {peer}")
+        except Exception as e:
+            print(f"[Bridge] File send error: {e}")
+        finally:
+            listener.close()
+            try:
+                _ngrok.disconnect(public_url)
+            except Exception:
+                pass
+
+    asyncio.create_task(_stream())
+    return ok_json({"ok": True, "filename": filename})
 
 
 # ─── App ──────────────────────────────────────────────────────────────────────
@@ -375,6 +508,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-chat",  handle_open_chat)
     app.router.add_post("/api/close-chat", handle_close_chat)
     app.router.add_post("/api/message",    handle_message)
+    app.router.add_post("/api/send-file",  handle_send_file)
     app.router.add_get( "/ws",             handle_ws)
 
     return app
