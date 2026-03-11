@@ -128,9 +128,9 @@ async def _new_session(username: str, first_packet: str) -> tuple[ChatSession | 
 # ─── CORS helpers ─────────────────────────────────────────────────────────────
 
 CORS = {
-    "Access-Control-Allow-Origin":  ALLOWED_ORIGIN,
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, ngrok-skip-browser-warning",
 }
 
 

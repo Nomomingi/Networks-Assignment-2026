@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '@/utils/api-fetch';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -22,11 +23,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);  // true while rehydrating
 
-    // Rehydrate from sessionStorage on first mount
+    // Rehydrate from sessionStorage on first mount + listen for session expiry
     useEffect(() => {
         const stored = sessionStorage.getItem('chat_user');
         if (stored) setUser(stored);
         setLoading(false);
+
+        // apiFetch fires this when any API call gets a 401 (e.g. bridge restarted)
+        const onExpired = () => {
+            setUser(null);
+            sessionStorage.removeItem('chat_user');
+        };
+        window.addEventListener('auth:expired', onExpired);
+        return () => window.removeEventListener('auth:expired', onExpired);
     }, []);
 
     /**
@@ -35,7 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      */
     const login = useCallback(async (username: string, password: string): Promise<string | null> => {
         try {
-            const res = await fetch(`${API_BASE}/api/login`, {
+            const res = await apiFetch(`${API_BASE}/api/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),
@@ -58,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
      */
     const signup = useCallback(async (username: string, password: string): Promise<string | null> => {
         try {
-            const res = await fetch(`${API_BASE}/api/signup`, {
+            const res = await apiFetch(`${API_BASE}/api/signup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password }),

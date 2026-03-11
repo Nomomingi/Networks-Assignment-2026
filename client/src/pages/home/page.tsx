@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/auth-context';
+import { apiFetch } from '@/utils/api-fetch';
 import styles from './index.module.css';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -39,7 +40,7 @@ const Home = () => {
     // ── Load contacts on mount ──────────────────────────────────────
     useEffect(() => {
         if (!user) return;
-        fetch(`${API}/api/contacts?user=${encodeURIComponent(user)}`)
+        apiFetch(`${API}/api/contacts?user=${encodeURIComponent(user)}`)
             .then(r => r.json())
             .then(d => setContacts(d.contacts ?? []))
             .catch(() => { });
@@ -115,7 +116,7 @@ const Home = () => {
 
         searchTimer.current = setTimeout(async () => {
             try {
-                const r = await fetch(
+                const r = await apiFetch(
                     `${API}/api/search?user=${encodeURIComponent(user!)}&q=${encodeURIComponent(searchQuery)}`
                 );
                 const d = await r.json();
@@ -137,7 +138,7 @@ const Home = () => {
         setHistory([]);
 
         try {
-            const r = await fetch(`${API}/api/open-chat`, {
+            const r = await apiFetch(`${API}/api/open-chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user, peer }),
@@ -156,7 +157,7 @@ const Home = () => {
     // ── Close chat when switching away ─────────────────────────────
     const closeCurrentChat = useCallback(async (peer: string) => {
         if (!user || !peer) return;
-        await fetch(`${API}/api/close-chat`, {
+        await apiFetch(`${API}/api/close-chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user, peer }),
@@ -184,7 +185,7 @@ const Home = () => {
         }]);
 
         try {
-            await fetch(`${API}/api/message`, {
+            await apiFetch(`${API}/api/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user, peer: activePeer, text }),
@@ -214,7 +215,7 @@ const Home = () => {
         form.append('file', file, file.name);
 
         try {
-            const r = await fetch(`${API}/api/send-file`, { method: 'POST', body: form });
+            const r = await apiFetch(`${API}/api/send-file`, { method: 'POST', body: form });
             const d = await r.json();
             if (r.ok) {
                 // Update optimistic entry to show sent
@@ -250,7 +251,7 @@ const Home = () => {
     // ── Logout ─────────────────────────────────────────────────────
     const handleLogout = async () => {
         if (activePeer) await closeCurrentChat(activePeer);
-        await fetch(`${API}/api/logout`, {
+        await apiFetch(`${API}/api/logout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user }),
