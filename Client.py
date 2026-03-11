@@ -1,7 +1,22 @@
+# The client program, which must be run after the server. 
+# Using ngrok means we need to change both the Server Port and Server Name during each test.
+
+# These modules in particular are used to modify the output in the terminal.
+import sys
+from termcolor import colored, cprint
+import tty
+import termios
+
 from socket import *
 import Protocol # Custom made, see Protocol.py
 from dataclasses import dataclass
 import threading
+import time
+
+PING_TIME = 5
+SERVER_NAME = 'localhost'
+TCP_SERVER_PORT = 14532
+UDP_SERVER_PORT = 14400
 
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
@@ -14,16 +29,21 @@ def log_in(clientSocket: socket) -> None:
 
     match output:
         case "OK|LOGIN_SUCCESS":
-            print("Login successful!")
+            cprint("Login successful!", "green")
+            # The UDP thread is created. This will send frequent pings to the server to communicate the user isn't sleeping.
+            event = threading.Event()
+            udpThread = threading.Thread(target = send_ping, args = (username, event), daemon = True)
+            udpThread.start()
             load_account_menu(clientSocket, username)
+
         case "ERROR|LOGIN_FAILED":
-            print("Login failed. Mismatching username and password.")
+            cprint("Login failed. Mismatching username and password.")
         case "ERROR|INVALID_LOGIN_FORMAT":
-            print("Invalid login format.")
+            cprint("Invalid login format.")
         case "ERROR|DB_ERROR":
-            print("An error with the database has occured.")
+            cprint("An error with the database has occured.")
         case _:
-            print("Unexpected server message:\t", output)
+            cprint(f"Unexpected server message:\t{output}", "red")
 
 
 # Made independently from the log_in function just for sanity's sake.
@@ -37,16 +57,16 @@ def create_account(clientSocket: socket) -> None:
 
     match output:
         case "OK|SIGNUP_SUCCESSFUL":
-            print("You have successfully created your account! You are currently logged in.")
+            cprint("You have successfully created your account! You are currently logged in.", "green")
             load_account_menu(clientSocket, username)
         case "ERROR|USER_ALREADY_EXISTS":
-            print("Someone else is using this username.")
+            cprint("Someone else is using this username.", "red")
         case "ERROR|INVALID_CREDENTIALS":
             print("")
         case "ERROR|INVALID_CREATE_FORMAT":
-            print(f"Something is wrong with the CREATE request:\t{output}")
+            cprint(f"Something is wrong with the CREATE request:\t{output}", "red")
         case _:
-            print("Unexpected server message:\t", output)
+            cprint(f"Unexpected server message:\t{output}", "red")
     pass
 
 # Loads the data of a newly logged in user to the terminal. This data includes:
@@ -176,10 +196,6 @@ def handle_user_contacts(clientSocket, username) -> None:
 #     finally:
 #         stop_event.set()
 #         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
-
-import sys
-import tty
-import termios
 
 def start_private_chat(clientSocket: socket, my_username, peer_username):
     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
@@ -312,7 +328,8 @@ def handle_search(clientSocket: socket, username: str) -> None:
         search = input("Search for a user (Enter 'Q' or 'Quit' to stop):\t")
 
         if search.lower() in ['quit', 'q']:
-            break
+            print()
+            load_account_menu(clientSocket, username)
 
         send_message(clientSocket, f"{Protocol.initiate_protocol(5)}\n{search}\n\n")
         packet = receive_packet(clientSocket)
@@ -369,33 +386,38 @@ def close_program(clientSocket: socket) -> None:
 
     output = receive_message(clientSocket).strip()
     if output == "OK|BYE":
-        print("You have successfully closed the program.")
+        cprint("You have successfully closed the program.", "green")
         clientSocket.close()
         quit()
     else: 
-        print("Strange output message from the server received:\t", output)
+        cprint(f"Strange output message from the server received:\t{output}", "orange")
     pass
 
 def main():
     try:
-        serverName = '6.tcp.eu.ngrok.io' # ======================================================================================================================
-        serverPort = 19181
+        serverName = SERVER_NAME
+        serverPort = TCP_SERVER_PORT
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))
         while True:
-            print("Welcome to our chat app! Press:\n" \
-            "1. Log-in\n" \
-            "2. Create Account\n" \
-            "3. Close Program")
-            num = eval(input())
-            if num == 1:
-                log_in(clientSocket)
-            elif num == 2:
-                create_account(clientSocket)
-            elif num == 3:
-                close_program(clientSocket)
-            else:
-                continue
+            try:
+                num = int(input("Welcome to our chat app! Press:\n" \
+                                "1. Log-in\n" \
+                                "2. Create Account\n" \
+                                "3. Close Program\n"))
+                if num == 1:
+                    log_in(clientSocket)
+                elif num == 2:
+                    create_account(clientSocket)
+                elif num == 3:
+                    close_program(clientSocket)
+                else:
+                    continue
+            except ValueError:
+                cprint("Please enter a valid number instead of a random character.\n", "red")
+            except KeyboardInterrupt:
+                cprint("\nPlease exit with 3!\n", "red")
+
     except ConnectionRefusedError:
         print("The connection was refused.\n" \
             "The server may be offline.")
@@ -405,10 +427,17 @@ def send_message(clientSocket: socket, message: str) -> None:
     clientSocket.sendall(message.encode())
     pass
 
+# UDP equivalent of the send_message method. 
+def send_message_udp(message: str, udpSocket: socket, ip: str, port: int) -> None:
+    udpSocket.sendto(message.encode(), (ip, port))
+    pass
+
 # Receives a message from the server.
 def receive_message(clientSocket: socket) -> str:
     return clientSocket.recv(1024).decode()
 
+# Much more elaborate variation of the receive_packet method,
+# which receives the entire message in chunks rather than preemptively truncating it.
 def receive_packet(clientSocket: socket) -> list:
     data = ""
     while True:
@@ -420,7 +449,25 @@ def receive_packet(clientSocket: socket) -> list:
             break
     packet = data.split("\n\n")[0]
     return packet.split("\n")
-    
+
+# Client side implementation of the ping system for UDP.
+def send_ping(username: str, event: threading.Event) -> None:
+    clientSocket = socket(AF_INET, SOCK_DGRAM)
+    try:
+        while not event.is_set():
+            try:
+                message = f"{Protocol.initiate_protocol(7)}|{username}"
+                send_message_udp(message, clientSocket, SERVER_NAME, UDP_SERVER_PORT)
+            except:
+                print("An error has occured while sending a ping to the server.")
+
+            time.sleep(PING_TIME)
+
+        clientSocket.close()    
+    except Exception as e:
+        print("Send ping function experienced an error:\t", e)
+    finally:
+        clientSocket.close()
 
 if __name__ == "__main__":
     main()
