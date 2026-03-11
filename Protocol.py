@@ -13,11 +13,11 @@ class Protocol(Enum):
     PING = 7 # For the UDP pinging.
     OPEN_CHAT = 8
     CLOSE_CHAT = 9
-    GROUP_CREATE = 10
-    GROUP_LIST = 11
-    GROUP_OPEN = 12
-    GROUP_MESSAGE = 13
-    GROUP_CLOSE = 14
+    GROUP_CREATE = 12
+    GROUP_LIST = 13
+    GROUP_OPEN = 14
+    GROUP_MESSAGE = 15
+    GROUP_CLOSE = 16
 
 # Returns string representation of a given protocol.
 # TODO: Change name.
