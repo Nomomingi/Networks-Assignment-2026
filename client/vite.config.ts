@@ -12,6 +12,8 @@ export default defineConfig({
       "@pages": path.resolve(__dirname, "./src/pages"),
       "@assets": path.resolve(__dirname, "./src/assets"),
     },
+  },
+  server: {
+    allowedHosts: ['ec6b-196-22-249-142.ngrok-free.app', 'localhost']
   }
-  
 })

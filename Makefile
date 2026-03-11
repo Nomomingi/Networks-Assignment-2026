@@ -28,7 +28,8 @@ client:
 	cd client && npm run dev
 
 # Start all three ngrok tunnels in one session (free-tier compatible).
-# Requires ~/.config/ngrok/ngrok.yml — copy ngrok.example.yml and fill in your token.
+# Requires ngrok v3 config at ~/Library/Application Support/ngrok/ngrok.yml
+# Copy with:  cp ngrok.yml ~/Library/Application\ Support/ngrok/ngrok.yml
 tunnel:
 	ngrok start --all
 

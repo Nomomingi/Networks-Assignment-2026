@@ -4,8 +4,9 @@
 # Then run:  ngrok start --all
 # This starts ALL tunnels in one session (free tier compatible).
 
-version: "2"
-authtoken: 2AqQLeC8yDxFxHKyjTcnDNNhj3O_3zKWeZsk9GCsARCdLcD9b
+version: "3"
+agent:
+  authtoken: 
 
 tunnels:
   # Main TCP chat server
