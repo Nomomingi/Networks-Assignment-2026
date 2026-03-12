@@ -1,0 +1,9 @@
+@font-face {
+  font-family: header; /* set name */
+  src: url(assets/fonts/bytebounce/ByteBounce.ttf); /* url of the font */
+}
+
+@font-face {
+  font-family:body ;
+  src: url(assets/fonts/lower-pixel/LowresPixel-Regular.otf);
+}
