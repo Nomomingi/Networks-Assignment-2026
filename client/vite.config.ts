@@ -4,16 +4,19 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Base path for GitHub Pages: https://nomomingi.github.io/Networks-Assignment-2026/
+  base: '/Networks-Assignment-2026/',
   plugins: [react()],
-  resolve:{
+  resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@components": path.resolve(__dirname, "./src/components"),
-      "@pages": path.resolve(__dirname, "./src/pages"),
-      "@assets": path.resolve(__dirname, "./src/assets"),
+      "@":            path.resolve(__dirname, "./src"),
+      "@components":  path.resolve(__dirname, "./src/components"),
+      "@pages":       path.resolve(__dirname, "./src/pages"),
+      "@assets":      path.resolve(__dirname, "./src/assets"),
     },
   },
   server: {
-    allowedHosts: ['ec6b-196-22-249-142.ngrok-free.app', 'localhost']
-  }
+    // Allow both local and ngrok dev access
+    allowedHosts: ['localhost', '.ngrok-free.app'],
+  },
 })

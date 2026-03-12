@@ -24,15 +24,18 @@ import socket as _rawsocket
 import tempfile
 from aiohttp import web
 import p2p
-import ngrok as _ngrok
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# TCP server co-located on the same Oracle machine as the bridge
 TCP_HOST     = os.getenv("CHAT_SERVER_HOST", "127.0.0.1")
 TCP_PORT     = int(os.getenv("CHAT_SERVER_PORT", "14532"))
 BRIDGE_PORT  = int(os.getenv("BRIDGE_PORT", "8000"))
-ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "http://localhost:5173")
+ALLOWED_ORIGIN = os.getenv("ALLOWED_ORIGIN", "*")
+# Public IP of the Oracle machine — used for direct P2P file transfer
+PUBLIC_HOST  = os.getenv("PUBLIC_HOST", "145.241.187.87")
+CHUNK_SIZE   = 65_536
 
 # ─── Session ──────────────────────────────────────────────────────────────────
 
@@ -401,8 +404,9 @@ async def handle_ws(req: web.Request) -> web.WebSocketResponse:
 
 async def handle_send_file(req: web.Request) -> web.Response:
     """
-    Accepts a multipart upload (fields: user, peer, file), opens an ngrok TCP
-    tunnel, notifies the server, then streams the file P2P to the recipient.
+    Accepts a multipart upload (fields: user, peer, file), opens a TCP listener
+    on the Oracle server's public IP, notifies the TCP server (which relays the
+    address to the peer), then streams the file directly to the recipient.
     """
     reader   = await req.multipart()
     user = peer = filename = None
@@ -424,45 +428,27 @@ async def handle_send_file(req: web.Request) -> web.Response:
     if isinstance(sess, web.Response):
         return sess
 
-    # Save the upload to a temp file so the streaming thread has a path
+    # Save upload to temp file for streaming
     tmp_path = os.path.join(tempfile.gettempdir(), filename)
     with open(tmp_path, "wb") as f:
         f.write(file_data)
 
-    # Open a local listener on a free port
+    # Open a TCP listener on any free port — Oracle's public IP is reachable
     listener = _rawsocket.socket(_rawsocket.AF_INET, _rawsocket.SOCK_STREAM)
     listener.setsockopt(_rawsocket.SOL_SOCKET, _rawsocket.SO_REUSEADDR, 1)
-    listener.bind(("", 0))
+    listener.bind(("0.0.0.0", 0))
     local_port = listener.getsockname()[1]
     listener.listen(1)
 
-    authtoken = os.getenv("NGROK_AUTHTOKEN_P2P") or os.getenv("NGROK_AUTHTOKEN")
-    if not authtoken:
-        listener.close()
-        return err_json("NGROK_AUTHTOKEN not set in .env", 500)
-
-    loop = asyncio.get_event_loop()
-    try:
-        tunnel = await loop.run_in_executor(
-            None,
-            lambda: _ngrok.forward(local_port, proto="tcp", authtoken=authtoken)
-        )
-    except Exception as e:
-        listener.close()
-        return err_json(f"Could not open ngrok tunnel: {e}", 502)
-
-    public_url  = tunnel.url()                         # tcp://X.tcp.ngrok.io:PORT
-    host_port   = public_url.replace("tcp://", "")
-    ngrok_host, ngrok_port = host_port.rsplit(":", 1)
-
-    # Tell the server to relay the address to the peer
+    # Tell the TCP server: relay Oracle's public address to the recipient
     resp = await sess.command(
-        f"SEND_BLOB\n{user}\n{peer}\n{filename}\n{ngrok_host}\n{ngrok_port}\n\n"
+        f"SEND_BLOB\n{user}\n{peer}\n{filename}\n{PUBLIC_HOST}\n{local_port}\n\n"
     )
     if resp != "OK|BLOB_NOTIFY_SENT":
         listener.close()
-        _ngrok.disconnect(public_url)
         return err_json(f"Server error: {resp}", 502)
+
+    loop = asyncio.get_event_loop()
 
     # Stream file to recipient in background
     async def _stream():
@@ -470,7 +456,7 @@ async def handle_send_file(req: web.Request) -> web.Response:
             conn, _ = await loop.run_in_executor(None, listener.accept)
             with open(tmp_path, "rb") as f:
                 while True:
-                    chunk = f.read(p2p.CHUNK_SIZE)
+                    chunk = f.read(CHUNK_SIZE)
                     if not chunk:
                         break
                     await loop.run_in_executor(
@@ -483,10 +469,6 @@ async def handle_send_file(req: web.Request) -> web.Response:
             print(f"[Bridge] File send error: {e}")
         finally:
             listener.close()
-            try:
-                _ngrok.disconnect(public_url)
-            except Exception:
-                pass
 
     asyncio.create_task(_stream())
     return ok_json({"ok": True, "filename": filename})

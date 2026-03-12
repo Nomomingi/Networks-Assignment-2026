@@ -11,7 +11,7 @@ client-deps:
 	cd client && npm install
 
 env:
-	echo "HOST=localhost\nPORT=3306\nDB_USER=root\nPASSWORD=\nDATABASE=chat_app\nNGROK_AUTHTOKEN=\nNGROK_AUTHTOKEN_P2P=" > .env
+	echo "HOST=localhost\nPORT=3306\nDB_USER=root\nPASSWORD=\nDATABASE=chat_app" > .env
 
 # ── Run targets ─────────────────────────────────────────────────────────────
 
@@ -20,24 +20,13 @@ server:
 	python3 Server.py
 
 # Start the HTTP/WebSocket bridge (translates REST ↔ TCP)
+# Both bridge and server run on the Oracle machine; TCP_HOST defaults to 127.0.0.1
 bridge:
 	python3 api_bridge.py
 
-# Start the React web client (Vite dev server)
+# Start the React web client (Vite dev server — local dev only)
 client:
 	cd client && npm run dev
-
-# Start all three ngrok tunnels in one session (free-tier compatible).
-# Requires ngrok v3 config at ~/Library/Application Support/ngrok/ngrok.yml
-# Copy with:  cp ngrok.yml ~/Library/Application\ Support/ngrok/ngrok.yml
-tunnel:
-	ngrok start --all
-
-# ── Convenience: run everything in parallel (macOS / Linux) ──────────────────
-# Each process gets its own terminal pane. Requires iTerm2 / tmux optional.
-# You can also just open 4 terminals and run the targets above individually.
-run-all:
-	make server & make bridge & make client & make tunnel
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 free_server_port:
@@ -46,4 +35,4 @@ free_server_port:
 free_bridge_port:
 	lsof -i:8000 -t | xargs kill -9
 
-.PHONY: db seed requirements client-deps env server bridge client tunnel run-all free_server_port free_bridge_port
+.PHONY: db seed requirements client-deps env server bridge client free_server_port free_bridge_port
