@@ -2,15 +2,22 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [gui]   # deploy on every push to gui branch
+    branches: [gui]
 
+# Required for the official pages deployment actions
 permissions:
-  contents: write     # needed to push to gh-pages branch
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,16 +37,22 @@ jobs:
         run: npm run build
         working-directory: client
         env:
-          # Set these in: GitHub repo → Settings → Secrets → Actions
-          # VITE_API_URL  = https://your-bridge-ngrok-url.ngrok-free.app
-          # VITE_WS_URL   = wss://your-bridge-ngrok-url.ngrok-free.app/ws
+          # Add these in: Repo → Settings → Secrets → Actions
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
           VITE_WS_URL:  ${{ secrets.VITE_WS_URL }}
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir:  ./client/dist
-          # GitHub Pages SPA needs a 404 fallback to index.html
-          # (HashRouter handles routing client-side, so 404 is never hit in practice)
+          path: ./client/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
