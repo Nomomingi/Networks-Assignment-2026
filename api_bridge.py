@@ -497,5 +497,18 @@ def build_app() -> web.Application:
 
 
 if __name__ == "__main__":
-    print(f"[Bridge] http://localhost:{BRIDGE_PORT}  →  TCP {TCP_HOST}:{TCP_PORT}")
-    web.run_app(build_app(), port=BRIDGE_PORT)
+    import ssl as _ssl
+
+    ssl_cert = os.getenv("SSL_CERT")   # path to cert.pem
+    ssl_key  = os.getenv("SSL_KEY")    # path to key.pem
+
+    ssl_ctx = None
+    if ssl_cert and ssl_key:
+        ssl_ctx = _ssl.create_default_context(_ssl.Purpose.CLIENT_AUTH)
+        ssl_ctx.load_cert_chain(ssl_cert, ssl_key)
+        scheme = "https"
+    else:
+        scheme = "http"
+
+    print(f"[Bridge] {scheme}://0.0.0.0:{BRIDGE_PORT}  →  TCP {TCP_HOST}:{TCP_PORT}")
+    web.run_app(build_app(), port=BRIDGE_PORT, ssl_context=ssl_ctx)
