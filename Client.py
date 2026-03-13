@@ -515,7 +515,22 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                 break
 
             kind = incoming[0].strip()
-            if kind in ("OK|GROUP_MESSAGE_SENT", "OK|GROUP_CLOSED"):
+            if kind in ("OK|GROUP_MESSAGE_SENT", "OK|GROUP_CLOSED", "OK|MEMBER_ADDED"):
+                continue
+            if kind == "ERROR|ALREADY_IN_GROUP":
+                sys.stdout.write("\r\033[K")
+                print("[User is already in this group]")
+                reprint_prompt()
+                continue
+            if kind == "ERROR|NO_SUCH_USER":
+                sys.stdout.write("\r\033[K")
+                print("[No such user]")
+                reprint_prompt()
+                continue
+            if kind == "ERROR|NOT_IN_GROUP":
+                sys.stdout.write("\r\033[K")
+                print("[You are not a member of this group]")
+                reprint_prompt()
                 continue
             if kind == "INCOMING_GROUP" and len(incoming) >= 4:
                 incoming_group_id = incoming[1].strip()
@@ -549,6 +564,15 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
 
                 if msg.strip() == "/exit":
                     break
+
+                if msg.strip().startswith("/add "):
+                    new_member = msg.strip()[len("/add "):].strip()
+                    if new_member:
+                        print(f"adding member: {new_member}")
+                        send_message(clientSocket, f"{Protocol.initiate_protocol(17)}\n{group_id}\n{new_member}\n\n")
+                    sys.stdout.write("\ryou> ")
+                    sys.stdout.flush()
+                    continue
 
                 if msg.strip():
                     print(f"you: {msg}")
@@ -592,8 +616,8 @@ def close_program(clientSocket: socket) -> None:
 
 def main():
     try:
-        serverName = '0.tcp.eu.ngrok.io' # ======================================================================================================================
-        serverPort = 10253
+        serverName = '0.tcp.sa.ngrok.io' # ======================================================================================================================
+        serverPort = 19777
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))
         while True:

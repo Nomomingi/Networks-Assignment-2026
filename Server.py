@@ -71,7 +71,8 @@ def handle_client(connectionSocket: socket, address: tuple):
             
             elif action == Protocol.initiate_protocol(16):
                 handle_group_close(connectionSocket, username, temp)
-
+            elif action == Protocol.initiate_protocol(17):
+                handle_group_add_member(connectionSocket, username, temp, db_local)
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
@@ -441,7 +442,7 @@ def handle_group_message(connectionSocket: socket, username: str | None, temp: l
             recipient_sockets = [online_users[member_username] for member_username in recipients if member_username in online_users]
         
         for sock in recipient_sockets:
-            send_message(socket, f"INCOMING_GROUP\n{group_id}\n{username}\n{message_text}\n\n")
+            send_message(sock, f"INCOMING_GROUP\n{group_id}\n{username}\n{message_text}\n\n")
         
         send_message(connectionSocket, "OK|GROUP_MESSAGE_SENT\n\n")
 
@@ -458,6 +459,52 @@ def handle_group_close(connectionSocket: socket, username: str | None, temp: lis
             del active_groups[username]
     
     send_message(connectionSocket, "OK|GROUP_CLOSED\n\n")
+
+def handle_group_add_member(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 3:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ADD_MEMBER_FORMAT\n\n")
+        return
+
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+
+    member_username = temp[2].strip()
+    if not member_username:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ADD_MEMBER_FORMAT\n\n")
+        return
+
+    try:
+        requester_row = db_local.get_user_by_username(username)
+        if not requester_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+
+        requester_id = requester_row[0]
+        if not db_local.is_user_in_group(group_id, requester_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+
+        member_row = db_local.get_user_by_username(member_username)
+        if not member_row:
+            send_message(connectionSocket, "ERROR|NO_SUCH_USER\n\n")
+            return
+
+        member_id = member_row[0]
+        if db_local.is_user_in_group(group_id, member_id):
+            send_message(connectionSocket, "ERROR|ALREADY_IN_GROUP\n\n")
+            return
+
+        db_local.add_user_to_group(group_id, member_id)
+        send_message(connectionSocket, "OK|MEMBER_ADDED\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_send_blob(connectionSocket: socket, sender_username: str | None, temp: list):
     """

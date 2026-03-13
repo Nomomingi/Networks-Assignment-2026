@@ -218,7 +218,7 @@ class DB:
         group_id = cursor.lastrowid
         cursor.close()
     
-        self.add_user_to_group(self, group_id, creator_id)
+        self.add_user_to_group(group_id, creator_id)
         return group_id
     
     def add_user_to_group(self, group_id: int, user_id: int):
@@ -227,7 +227,7 @@ class DB:
         cursor.close()
     
     def get_user_groups(self, user_id: int):
-        cursor = self.cursor()
+        cursor = self._cursor()
         cursor.execute(
             """
             SELECT gc.group_id, gc.group_name
@@ -261,7 +261,7 @@ class DB:
             FROM GroupMessages gm
             JOIN Users u ON u.user_id = gm.sender_id
             WHERE gm.group_id = %s
-            ORDER BY u.username ASC
+            ORDER BY gm.sent_at ASC
             """,
             (group_id, ),
         )

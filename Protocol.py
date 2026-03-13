@@ -20,6 +20,7 @@ class Protocol(Enum):
     GROUP_OPEN = 14
     GROUP_MESSAGE = 15
     GROUP_CLOSE = 16
+    GROUP_ADD_MEMBER = 17
 
 # Returns string representation of a given protocol.
 # TODO: Change name.
