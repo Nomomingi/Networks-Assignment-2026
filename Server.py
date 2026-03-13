@@ -3,6 +3,7 @@ import Protocol # Custom made, see Protocol.py
 import threading
 from db import DB
 import time
+import traceback
 
 online_users = {} # A dictionary to store the online users, and their sockets as a value.
 users_last_seen = {} # A dictionary to store when last they were seen on the server.
@@ -12,6 +13,12 @@ chat_lock = threading.Lock()
 active_groups = {}
 group_lock = threading.Lock()
 SLEEPY_TIME = 20 # Constant for the time taken for a user to sleep.
+
+def _proto(num: int) -> str | None:
+    try:
+        return Protocol.initiate_protocol(num)
+    except Exception:
+        return None
 
 # Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
@@ -30,52 +37,53 @@ def handle_client(connectionSocket: socket, address: tuple):
     
             action = temp[0].strip() # Tells the server what action the user wants to perform
             
-            if action == Protocol.initiate_protocol(1): # LOGIN
+            if action == _proto(1): # LOGIN
                 username = handle_login(connectionSocket, temp, username, db_local)
 
-            elif action == Protocol.initiate_protocol(2): #CREATE
+            elif action == _proto(2): #CREATE
                 handle_account_creation(connectionSocket, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(3): #CLOSE
+            elif action == _proto(3): #CLOSE
                 handle_program_close(connectionSocket)
                 break # Stop handling this client
-            elif action == Protocol.initiate_protocol(4): #PRIVATE
+            elif action == _proto(4): #PRIVATE
                 handle_private_message(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(5): #SEARCH
+            elif action == _proto(5): #SEARCH
                 handle_search(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(8): #OPEN_CHAT
+            elif action == _proto(8): #OPEN_CHAT
                 handle_open_chat(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(9): #CLOSE_CHAT
+            elif action == _proto(9): #CLOSE_CHAT
                 handle_close_chat(connectionSocket, username, temp)
 
-            elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
+            elif action == _proto(6): #CoNTACTS - People who you've chatted with
                 handle_get_contacts(connectionSocket, username, db_local)
 
-            elif action == Protocol.initiate_protocol(10): #SEND_BLOB - relay ngrok address to recipient
+            elif action == _proto(10): #SEND_BLOB - relay ngrok address to recipient
                 handle_send_blob(connectionSocket, username, temp)
 
-            elif action == Protocol.initiate_protocol(12):
+            elif action == _proto(12):
                 handle_group_create(connectionSocket, username, temp, db_local)
             
-            elif action == Protocol.initiate_protocol(13):
+            elif action == _proto(13):
                 handle_group_list(connectionSocket, username, db_local)
             
-            elif action == Protocol.initiate_protocol(14):
+            elif action == _proto(14):
                 handle_group_open(connectionSocket, username, temp, db_local)
             
-            elif action == Protocol.initiate_protocol(15):
+            elif action == _proto(15):
                 handle_group_message(connectionSocket, username, temp, db_local)
             
-            elif action == Protocol.initiate_protocol(16):
+            elif action == _proto(16):
                 handle_group_close(connectionSocket, username, temp)
-            elif action == Protocol.initiate_protocol(17):
+            elif action == _proto(17):
                 handle_group_add_member(connectionSocket, username, temp, db_local)
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
+        traceback.print_exc()
         try:
             send_message(connectionSocket, "ERROR|SERVER_EXCEPTION\n\n")
         except:
