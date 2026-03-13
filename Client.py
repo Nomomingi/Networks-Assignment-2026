@@ -4,20 +4,30 @@
 # These modules in particular are used to modify the output in the terminal.
 import sys
 from termcolor import colored, cprint
-import tty
-import termios
+from rich.panel import Panel
+from rich.console import Console
+from rich import print
+import pyfiglet
+
+try:
+    import tty
+    import termios
+except:
+    cprint("TTY/ Termios not found. Try running the program on WSL/Linux.", "red")
+    quit()    
 
 from socket import *
 import Protocol # Custom made, see Protocol.py
 from dataclasses import dataclass
 import threading
 import time
-import ClientStates
+import ClientStates # Custom made, see ClientStates.py
 
 PING_TIME = 5
-SERVER_NAME = '6.tcp.ngrok.io'
-TCP_SERVER_PORT = 18685
+SERVER_NAME = '145.241.187.87'
+TCP_SERVER_PORT = 14532
 UDP_SERVER_PORT = 14400
+console = Console()
 
 currentState = ClientStates.State.MAIN_MENU
 
@@ -41,22 +51,38 @@ def state_control(clientSocket: socket) -> ClientStates.State:
                 start_private_chat(clientSocket, username, peer_username)
             case ClientStates.State.CONTACTS:
                 handle_user_contacts(clientSocket, username)
+
+            #TODO: FIX THE GROUP IMPLEMENTATIONS.
             case ClientStates.State.GROUP:
                 print("Waiting for Chandik's implementation.")
                 close_program(clientSocket)
+            case ClientStates.State.MAKE_GROUP:
+                print("Waiting for Chandik's implementation.")
+                close_program(clientSocket)
+            case ClientStates.State.GROUP_CHATS:
+                print("Waiting for Chandik's implementation.")
+                close_program(clientSocket)
+
     close_program(clientSocket)
     pass
 
 def load_main_menu(clientSocket: socket) -> None:
     global currentState
     global username
-    username = None # This is to remove any po
+    username = None
     try:
-        num = int(input("Welcome to our chat app! Press:\n" \
-                        "1. Log-in\n" \
-                        "2. Create Account\n" \
-                        "3. Close Program\n" \
-                        "> "))  
+        banner = pyfiglet.figlet_format("Welcome!", width=50)
+        print("[cyan]" + banner + "[/cyan]")
+        console.print(
+            Panel(
+                "1. Log-in\n2. Create Account\n3. Close Program",
+                title="[bold]Main Menu[/bold]",
+                expand=False,
+                padding=(0,1)
+            )
+        )
+
+        num = int(input("> "))
 
         match num:
             case 1:
@@ -92,15 +118,16 @@ def log_in(clientSocket: socket) -> None:
             udpThread = threading.Thread(target = send_ping, args = (username, event), daemon = True)
             udpThread.start()
             currentState = ClientStates.State.ACCOUNT_MENU
-
+            return
         case "ERROR|LOGIN_FAILED":
-            cprint("Login failed. Mismatching username and password.")
+            cprint("Login failed. Mismatching username and password.", "red")
         case "ERROR|INVALID_LOGIN_FORMAT":
-            cprint("Invalid login format.")
+            cprint("Invalid login format.", "red"),
         case "ERROR|DB_ERROR":
-            cprint("An error with the database has occured.")
+            cprint("An error with the database has occured.", "red")
         case _:
             cprint(f"Unexpected server message:\t{output}", "red")
+    username = None
 
 
 # Made independently from the log_in function just for sanity's sake.
@@ -119,15 +146,16 @@ def create_account(clientSocket: socket) -> None:
         case "OK|SIGNUP_SUCCESSFUL":
             cprint("You have successfully created your account! You are currently logged in.", "green")
             currentState = ClientStates.State.ACCOUNT_MENU
+            return
         case "ERROR|USER_ALREADY_EXISTS":
             cprint("Someone else is using this username.", "red")
         case "ERROR|INVALID_CREDENTIALS":
-            print("")
+            cprint("Credentials are incorrect.", "red")
         case "ERROR|INVALID_CREATE_FORMAT":
             cprint(f"Something is wrong with the CREATE request:\t{output}", "red")
         case _:
             cprint(f"Unexpected server message:\t{output}", "red")
-    pass
+    username = None
 
 # Loads the data of a newly logged in user to the terminal. This data includes:
 # 1.) The user's 'contacts'. This leads to the list of contacts that the user has communicated with in the past. Text and media can be exchanged here (Media only if the other user is online (because of UDP)).
@@ -138,27 +166,34 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
     global currentState
 
     try:
-        choice = int(input(f"Welcome {username}!\n" \
-        "1. Check contacts\n" \
-        "2. Search an account\n" \
-        "3. Form a group\n" \
-        "4. Log out\n" \
-        "> "))
+        text = f"Welcome, {username}"
+        account_banner = pyfiglet.figlet_format(text, width=50)
+        cprint(account_banner, "cyan")
+
+        console.print(Panel("1. Check contacts\n2. Check groups\n3. Search Contact\n4. Make Group\n5. Log out",
+            title="[bold]Account Menu[/bold]",
+            expand=False,
+            padding=(0,1) ))
+        
+        choice = int(input("> "))
+
         match choice:
             case 1:
                 currentState = ClientStates.State.CONTACTS
             case 2:
-                currentState = ClientStates.State.SEARCH
+                currentState = ClientStates.State.GROUP_CHATS
             case 3:
-                currentState = ClientStates.State.GROUP
+                currentState = ClientStates.State.SEARCH
             case 4:
+                currentState = ClientStates.State.MAKE_GROUP
+            case 5:
                 logout = str(input("You will be logged out (Type '/exit' to confirm.) >\t"))
                 if logout == "/exit":
                     currentState = ClientStates.State.MAIN_MENU
                 else:
                     print("You are still logged-in.")
             case _:
-                cprint("Please enter a number between 1 and 4.", "red")
+                cprint("Please enter a number between 1 and 5.", "red")
                 
     except ValueError:
         print("Please enter a number.")
@@ -184,10 +219,13 @@ def handle_user_contacts(clientSocket, username) -> None:
     contacts = [line.strip() for line in packet[1:] if line.strip()]
     if not contacts:
         print("You have no contacts yet.")
+        currentState = ClientStates.State.ACCOUNT_MENU
         return
 
     print("Your contacts:")
     for i, c in enumerate(contacts, start=1):
+        if c == username:
+            continue
         print(f"{i}) {c}")
 
     selection = input("Select a contact number to chat, or press Enter to go back: ").strip()
@@ -265,6 +303,8 @@ def handle_user_contacts(clientSocket, username) -> None:
 #         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
 
 def start_private_chat(clientSocket: socket, my_username: str, peer_username: str):
+    global currentState
+
     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
     packet = receive_packet(clientSocket)
     if not packet:
@@ -345,6 +385,7 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
                     input_buffer.clear()
                 sys.stdout.write("\r\033[K")  # clear the input line
                 if msg.strip() == "/exit":
+                    currentState = ClientStates.State.ACCOUNT_MENU
                     break
                 if msg.strip():
                     print(f"you>: {msg}")  # echo sent message as a chat line

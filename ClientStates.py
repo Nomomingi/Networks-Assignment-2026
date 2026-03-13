@@ -11,5 +11,7 @@ class State (Enum):
     CHAT = 7
     CONTACTS = 8
     CLOSE = 9
+    MAKE_GROUP = 10
+    GROUP_CHATS = 11
 
 currentState = State.MAIN_MENU
