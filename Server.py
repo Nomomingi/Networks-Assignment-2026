@@ -80,6 +80,8 @@ def handle_client(connectionSocket: socket, address: tuple):
                 handle_group_close(connectionSocket, username, temp)
             elif action == _proto(17):
                 handle_group_add_member(connectionSocket, username, temp, db_local)
+            elif action == _proto(18):
+                handle_group_send_blob(connectionSocket, username, temp, db_local)
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
@@ -511,6 +513,69 @@ def handle_group_add_member(connectionSocket: socket, username: str | None, temp
 
         db_local.add_user_to_group(group_id, member_id)
         send_message(connectionSocket, "OK|MEMBER_ADDED\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_group_send_blob(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 5:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_BLOB_FORMAT\n\n")
+        return
+
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+
+    filename = temp[2].strip()
+    ngrok_host = temp[3].strip()
+    ngrok_port = temp[4].strip()
+    if not filename or not ngrok_host or not ngrok_port:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_BLOB_FORMAT\n\n")
+        return
+
+    try:
+        sender_row = db_local.get_user_by_username(username)
+        if not sender_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+
+        sender_id = sender_row[0]
+        if not db_local.is_user_in_group(group_id, sender_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+
+        member_rows = db_local.get_group_members(group_id)
+
+        recipients = []
+        with group_lock:
+            for _group_id, member_user_id, *_ in member_rows:
+                member_user = db_local.get_user_by_id(member_user_id)
+                if not member_user:
+                    continue
+                member_username = member_user[1]
+
+                if member_username == username:
+                    continue
+
+                # Option A: only users currently inside this group chat
+                if active_groups.get(member_username) == group_id:
+                    recipients.append(member_username)
+
+        with online_lock:
+            recipient_sockets = [online_users[u] for u in recipients if u in online_users]
+
+        for sock in recipient_sockets:
+            send_message(
+                sock,
+                f"GROUP_BLOB_OFFER\n{group_id}\n{username}\n{ngrok_host}\n{ngrok_port}\n{filename}\n\n",
+            )
+
+        send_message(connectionSocket, "OK|GROUP_BLOB_NOTIFY_SENT\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 

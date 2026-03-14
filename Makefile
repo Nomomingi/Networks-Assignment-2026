@@ -5,7 +5,7 @@ seed:
 	mysql -u root -p chat_app < seed.sql
 
 requirements:
-	echo "mysql-connector-python\npython-dotenv\nngrok" > requirements.txt && pip3 install -r requirements.txt
+	 pip3 install -r requirements.txt
 
 env:
 	echo "HOST=localhost\nPORT=3306\nDB_USER=root # change this to your MySQL username\nPASSWORD= # use your MySQL password\nDATABASE=chat_app\nNGROK_AUTHTOKEN= "> .env

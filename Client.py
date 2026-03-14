@@ -652,7 +652,7 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                 break
 
             kind = incoming[0].strip()
-            if kind in ("OK|GROUP_MESSAGE_SENT", "OK|GROUP_CLOSED", "OK|MEMBER_ADDED"):
+            if kind in ("OK|GROUP_MESSAGE_SENT", "OK|GROUP_CLOSED", "OK|MEMBER_ADDED", "OK|GROUP_BLOB_NOTIFY_SENT"):
                 continue
             if kind == "ERROR|ALREADY_IN_GROUP":
                 sys.stdout.write("\r\033[K")
@@ -678,6 +678,26 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                     sys.stdout.write("\r\033[K")
                     print(f"{sender}: {msg}")
                     reprint_prompt()
+
+            elif kind == "GROUP_BLOB_OFFER" and len(incoming) >= 6:
+                incoming_group_id = incoming[1].strip()
+                blob_sender = incoming[2].strip()
+                blob_host = incoming[3].strip()
+                try:
+                    blob_port = int(incoming[4].strip())
+                except ValueError:
+                    continue
+                blob_filename = incoming[5].strip()
+
+                if incoming_group_id == str(group_id):
+                    sys.stdout.write("\r\033[K")
+                    print(f"[File incoming in group from {blob_sender}: '{blob_filename}']")
+                    reprint_prompt()
+                    threading.Thread(
+                        target=p2p.receive_blob,
+                        args=(blob_host, blob_port, blob_filename),
+                        daemon=True,
+                    ).start()
 
     t = threading.Thread(target=receiver_loop, daemon=True)
     t.start()
@@ -708,6 +728,15 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                     if new_member:
                         print(f"Adding member: {new_member}")
                         send_message(clientSocket, f"{Protocol.initiate_protocol(17)}\n{group_id}\n{new_member}\n\n")
+                    sys.stdout.write("\ryou> ")
+                    sys.stdout.flush()
+                    continue
+
+                if msg.strip().startswith("/sendfile "):
+                    file_path = msg.strip()[len("/sendfile "):].strip()
+                    if file_path:
+                        print(f"Sending file to group: {file_path}")
+                        p2p.send_group_blob(file_path, clientSocket, my_username, str(group_id))
                     sys.stdout.write("\ryou> ")
                     sys.stdout.flush()
                     continue
