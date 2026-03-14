@@ -572,6 +572,7 @@ def udp_server() -> None:
         message = temp.decode().strip().split("|")
         if message[0] == Protocol.initiate_protocol(7): # PING
             username = message[1]
+            print(f"Username [{username}] pinged at [{time.time()}]")
             with online_lock:
                 if username in users_last_seen:
                     users_last_seen[username] = time.time()
@@ -597,11 +598,10 @@ def main():
     serverSocket.listen(5)
     print("The TCP server is up and running.")
 
-    #udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
-    #sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
-    #udpThread.start()
-    #sleepyThread.start()
-
+    udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
+    sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
+    udpThread.start()
+    sleepyThread.start()
 
     while True:
         connectionSocket, addr = serverSocket.accept()
