@@ -142,8 +142,8 @@ def create_account(clientSocket: socket) -> None:
 
     match output:
         case "OK|SIGNUP_SUCCESSFUL":
-            cprint("You have successfully created your account! You are currently logged in.", "green")
-            currentState = ClientStates.State.ACCOUNT_MENU
+            cprint("You have successfully created your account! You can now login to your account.", "green")
+            currentState = ClientStates.State.LOGIN
             return
         case "ERROR|USER_ALREADY_EXISTS":
             cprint("Someone else is using this username.", "red")
@@ -228,6 +228,7 @@ def handle_user_contacts(clientSocket, username) -> None:
 
     selection = input("Select a contact number to chat, or press Enter to go back: ").strip()
     if not selection:
+        currentState = ClientStates.State.ACCOUNT_MENU
         return
 
     try:
@@ -584,6 +585,7 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
     
     selection = input("Select a group number to open, or press Enter to go back: ").strip()
     if not selection:
+        currentState = ClientStates.State.ACCOUNT_MENU
         return
     
     try:
