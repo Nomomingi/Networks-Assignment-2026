@@ -37,32 +37,30 @@ def state_control(clientSocket: socket) -> ClientStates.State:
     
     while currentState != ClientStates.State.CLOSE:
         cprint(f"{currentState}", "cyan")
-        match currentState:
-            case ClientStates.State.MAIN_MENU:
-                load_main_menu(clientSocket)
-            case ClientStates.State.ACCOUNT_MENU:
-                load_account_menu(clientSocket, username)
-            case ClientStates.State.CREATE_ACCOUNT:
-                create_account(clientSocket)
-            case ClientStates.State.LOGIN:
-                log_in(clientSocket)
-            case ClientStates.State.SEARCH:
-                handle_search(clientSocket, username)
-            case ClientStates.State.CHAT:
-                start_private_chat(clientSocket, username, peer_username)
-            case ClientStates.State.CONTACTS:
-                handle_user_contacts(clientSocket, username)
-
-            #TODO: FIX THE GROUP IMPLEMENTATIONS.
-            case ClientStates.State.GROUP:
-                print("Waiting for Chandik's implementation.")
-                close_program(clientSocket)
-            case ClientStates.State.MAKE_GROUP:
-                print("Waiting for Chandik's implementation.")
-                close_program(clientSocket)
-            case ClientStates.State.GROUP_CHATS:
-                print("Waiting for Chandik's implementation.")
-                close_program(clientSocket)
+        try:
+            match currentState:
+                case ClientStates.State.MAIN_MENU:
+                    load_main_menu(clientSocket)
+                case ClientStates.State.ACCOUNT_MENU:
+                    load_account_menu(clientSocket, username)
+                case ClientStates.State.CREATE_ACCOUNT:
+                    create_account(clientSocket)
+                case ClientStates.State.LOGIN:
+                    log_in(clientSocket)
+                case ClientStates.State.SEARCH:
+                    handle_search(clientSocket, username)
+                case ClientStates.State.CHAT:
+                    start_private_chat(clientSocket, username, peer_username)
+                case ClientStates.State.CONTACTS:
+                    handle_user_contacts(clientSocket, username)
+                case ClientStates.State.GROUP:
+                    start_group_chat(clientSocket, username, group_id, group_name)
+                case ClientStates.State.MAKE_GROUP:
+                    handle_group_making(clientSocket, username)
+                case ClientStates.State.GROUP_CHATS:
+                    handle_group_list(clientSocket, username)
+        except KeyboardInterrupt:
+            close_program(clientSocket)
 
     close_program(clientSocket)
     pass
@@ -322,7 +320,7 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
         print("Unexpected server message:\t", header)
         return
 
-    print(f"\n--- Chat with {peer_username} (type /exit to leave) ---")
+    print(f"\n--- Chat with {peer_username} (Type '/exit' to leave) ---")
     for line in packet[1:]:
         line = line.strip()
         if not line:
@@ -498,16 +496,19 @@ def handle_search(clientSocket: socket, username: str) -> None:
     pass
 
 def handle_group_making(clientSocket: socket, username: str) -> None:
+    global currentState
+
     group_name = input("Enter group name: ").strip()
+
     if not group_name:
         print("Group name cannot be empty.")
         return
 
     members = []
-    print("Enter usernames to add. Type Q to stop.")
+    print("Enter usernames to add to the group chat. Type '/exit' to stop:")
     while True:
         member = input("Add member: ").strip()
-        if member.lower() in ['quit', 'q']:
+        if member == '/exit':
             break
         if not member:
             continue
@@ -528,17 +529,23 @@ def handle_group_making(clientSocket: socket, username: str) -> None:
     header = packet[0].strip()
     if header.startswith("OK|GROUP_CREATED|"):
         group_id = header.split("|")[2]
-        print(f"Group created successfully. Group ID: {group_id}")
+        print(f"Group created successfully. Group ID: {group_id}")        
     elif header == "ERROR|INVALID_GROUP_NAME":
         print("Invalid group name.")
     elif header == "ERROR|DB_ERROR":
         print("Database error.")
     else:
         print("Unexpected server message:", header)
+
+    currentState = ClientStates.State.ACCOUNT_MENU
     
     # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
 
 def handle_group_list(clientSocket: socket, username: str) -> None:
+    global currentState
+    global group_id
+    global group_name
+
     send_message(clientSocket, f"{Protocol.initiate_protocol(13)}\n\n")
 
     packet = receive_packet(clientSocket)
@@ -563,6 +570,12 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
 
     if not groups:
         print("You are not in any groups yet.")
+        input("Press enter to continue...")
+        sys.stdout.write("\r" + " " * 100 + "\r")
+        sys.stdout.flush()
+
+        currentState = ClientStates.State.ACCOUNT_MENU
+
         return
     
     print("Your groups:")
@@ -584,9 +597,11 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
         return
     
     group_id, group_name = groups[idx - 1]
-    start_group_chat(clientSocket, username, group_id, group_name)
+    currentState = ClientStates.State.GROUP
 
 def start_group_chat(clientSocket: socket, my_username: str, group_id: str, group_name: str):
+    global currentState
+
     send_message(clientSocket, f"{Protocol.initiate_protocol(14)}\n{group_id}\n\n")
     packet = receive_packet(clientSocket)
 
@@ -605,7 +620,7 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
         print("Unexpected server message: ", header)
         return
     
-    print(f"\n---Group chat: {group_name} (type /exit to leave) ---")
+    print(f"\n---Group chat: {group_name} (Type '/exit' to leave, and '/add [USERNAME]' to add someone)---")
     for line in packet[1:]:
         line = line.strip()
         if not line:
@@ -683,12 +698,13 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                 sys.stdout.write("\r\033[K")
 
                 if msg.strip() == "/exit":
+                    currentState = ClientStates.State.ACCOUNT_MENU
                     break
 
                 if msg.strip().startswith("/add "):
                     new_member = msg.strip()[len("/add "):].strip()
                     if new_member:
-                        print(f"adding member: {new_member}")
+                        print(f"Adding member: {new_member}")
                         send_message(clientSocket, f"{Protocol.initiate_protocol(17)}\n{group_id}\n{new_member}\n\n")
                     sys.stdout.write("\ryou> ")
                     sys.stdout.flush()
