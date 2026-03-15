@@ -1,0 +1,122 @@
+/* ── Login page — retro 90s theme ───────────────────────────── */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    height: 100vh;
+    background: #050505;
+    color: #a8d060;
+    font-family: body, monospace;
+
+    /* scanlines */
+    background-image: repeating-linear-gradient(0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 0, 0, 0.2) 2px,
+            rgba(0, 0, 0, 0.2) 4px);
+}
+
+.header {
+    font-family: header, monospace;
+    font-size: 3.5rem;
+    color: #39ff14;
+    text-shadow: 0 0 10px #39ff14, 0 0 30px #39ff1466;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+}
+
+.subtitle {
+    font-size: 0.65rem;
+    color: #2a5a10;
+    letter-spacing: 3px;
+    margin-top: -1rem;
+}
+
+.col {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.7rem;
+    width: 100%;
+    max-width: 340px;
+    border: 1px solid #1a3a08;
+    padding: 1.4rem;
+    background: #060d01;
+    box-shadow: 0 0 20px #39ff1420, inset 0 0 20px #00000066;
+}
+
+.input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0a1a02;
+    border: 1px solid #2a5a10;
+    color: #a8d060;
+    font-family: body, monospace;
+    font-size: 0.8rem;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    caret-color: #39ff14;
+}
+
+.input:focus {
+    border-color: #39ff14;
+    box-shadow: 0 0 8px #39ff1444;
+}
+
+.input::placeholder {
+    color: #3a5a20;
+}
+
+.error {
+    font-size: 0.7rem;
+    color: #ff4444;
+    text-shadow: 0 0 6px #ff444466;
+    text-align: center;
+    margin: 0;
+}
+
+.button {
+    font-family: body, monospace;
+    font-size: 0.8rem;
+    background: transparent;
+    color: #39ff14;
+    border: 1px solid #39ff14;
+    padding: 7px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: background 0.1s, color 0.1s, box-shadow 0.1s;
+    margin-top: 0.3rem;
+}
+
+.button:hover:not(:disabled) {
+    background: #39ff14;
+    color: #050505;
+    box-shadow: 0 0 12px #39ff1466;
+}
+
+.button:disabled {
+    color: #1a3a08;
+    border-color: #1a3a08;
+    cursor: default;
+}
+
+.footer {
+    font-size: 0.7rem;
+    color: #3a5a20;
+    margin: 0;
+}
+
+.footer a {
+    color: #ffb300;
+    text-decoration: none;
+    text-shadow: 0 0 6px #ffb30066;
+}
+
+.footer a:hover {
+    text-decoration: underline;
+}

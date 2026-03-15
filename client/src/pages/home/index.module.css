@@ -1,0 +1,467 @@
+/* ── Retro 90s chatroom — full layout ───────────────────────────── */
+
+/* Root layout */
+.shell {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100vh;
+    background: #050505;
+    color: #a8d060;
+    font-family: body, monospace;
+    overflow: hidden;
+    image-rendering: pixelated;
+}
+
+/* Scanline overlay */
+.shell::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 0, 0, 0.18) 2px,
+            rgba(0, 0, 0, 0.18) 4px);
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Top title bar */
+.titleBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: #0a1a02;
+    border-bottom: 2px solid #39ff14;
+    box-shadow: 0 2px 12px #39ff1444;
+}
+
+.titleBarLeft {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo {
+    font-family: header, monospace;
+    font-size: 1.6rem;
+    color: #39ff14;
+    text-shadow: 0 0 8px #39ff14, 0 0 20px #39ff1488;
+    letter-spacing: 2px;
+}
+
+.version {
+    font-size: 0.65rem;
+    color: #4a7a20;
+    align-self: flex-end;
+    margin-bottom: 2px;
+}
+
+.titleBarRight {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.userChip {
+    font-size: 0.75rem;
+    color: #ffb300;
+    text-shadow: 0 0 6px #ffb30066;
+    border: 1px solid #ffb30066;
+    padding: 2px 8px;
+}
+
+.logoutBtn {
+    font-family: body, monospace;
+    font-size: 0.7rem;
+    background: transparent;
+    color: #ff4444;
+    border: 1px solid #ff4444;
+    padding: 2px 8px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background 0.1s, color 0.1s;
+}
+
+.logoutBtn:hover {
+    background: #ff4444;
+    color: #050505;
+}
+
+/* Main two-panel area */
+.main {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    overflow: hidden;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────── */
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    border-right: 2px solid #1a3a08;
+    background: #060d01;
+    overflow: hidden;
+}
+
+.searchBox {
+    padding: 8px;
+    border-bottom: 1px solid #1a3a08;
+    position: relative;
+}
+
+.searchInput {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0a1a02;
+    border: 1px solid #2a5a10;
+    color: #a8d060;
+    font-family: body, monospace;
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.searchInput:focus {
+    border-color: #39ff14;
+    box-shadow: 0 0 6px #39ff1444;
+}
+
+.searchInput::placeholder {
+    color: #3a5a20;
+}
+
+.searchResults {
+    position: absolute;
+    top: 100%;
+    left: 8px;
+    right: 8px;
+    background: #0a1a02;
+    border: 1px solid #39ff14;
+    z-index: 100;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.searchResultItem {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    color: #a8d060;
+    cursor: pointer;
+    border-bottom: 1px solid #1a3a08;
+}
+
+.searchResultItem:hover {
+    background: #39ff14;
+    color: #050505;
+}
+
+/* Contacts section */
+.contactsLabel {
+    font-size: 0.65rem;
+    color: #3a5a20;
+    letter-spacing: 2px;
+    padding: 8px 10px 4px;
+    text-transform: uppercase;
+    border-bottom: 1px solid #1a3a08;
+}
+
+.contactsList {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.contactsList::-webkit-scrollbar {
+    width: 6px;
+}
+
+.contactsList::-webkit-scrollbar-track {
+    background: #060d01;
+}
+
+.contactsList::-webkit-scrollbar-thumb {
+    background: #1a3a08;
+}
+
+.contactsList::-webkit-scrollbar-thumb:hover {
+    background: #39ff14;
+}
+
+.contactItem {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    color: #a8d060;
+    cursor: pointer;
+    border-bottom: 1px solid #0d1e03;
+    transition: background 0.1s;
+}
+
+.contactItem:hover {
+    background: #0d2004;
+    color: #39ff14;
+}
+
+.contactItem.active {
+    background: #0f2a04;
+    color: #39ff14;
+    border-left: 3px solid #39ff14;
+}
+
+.onlineDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #39ff14;
+    box-shadow: 0 0 4px #39ff14;
+    flex-shrink: 0;
+}
+
+.noContacts {
+    padding: 12px 10px;
+    font-size: 0.7rem;
+    color: #3a5a20;
+    text-align: center;
+}
+
+/* Sidebar bottom */
+.sidebarBottom {
+    padding: 10px;
+    border-top: 1px solid #1a3a08;
+}
+
+.newGroupBtn {
+    width: 100%;
+    font-family: body, monospace;
+    font-size: 0.72rem;
+    background: transparent;
+    color: #ffb300;
+    border: 1px solid #ffb300;
+    padding: 5px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background 0.1s, color 0.1s;
+}
+
+.newGroupBtn:hover {
+    background: #ffb300;
+    color: #050505;
+}
+
+/* ── Chat panel ───────────────────────────────────────────────── */
+.chatPanel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #050505;
+}
+
+.chatHeader {
+    padding: 7px 14px;
+    border-bottom: 1px solid #1a3a08;
+    font-size: 0.75rem;
+    color: #4a7a20;
+    background: #060d01;
+    letter-spacing: 1px;
+}
+
+.chatHeaderName {
+    color: #39ff14;
+    font-size: 0.85rem;
+}
+
+.chatEmpty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #1a3a08;
+    font-size: 0.8rem;
+    letter-spacing: 3px;
+    text-align: center;
+    line-height: 2;
+}
+
+/* Message area */
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.messages::-webkit-scrollbar-track {
+    background: #050505;
+}
+
+.messages::-webkit-scrollbar-thumb {
+    background: #1a3a08;
+}
+
+.messages::-webkit-scrollbar-thumb:hover {
+    background: #39ff14;
+}
+
+.msgRow {
+    display: flex;
+    gap: 8px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.msgTs {
+    color: #2a4a10;
+    flex-shrink: 0;
+    font-size: 0.65rem;
+    margin-top: 1px;
+}
+
+.msgSender {
+    flex-shrink: 0;
+    min-width: 60px;
+    text-align: right;
+}
+
+.msgSender.mine {
+    color: #39ff14;
+    text-shadow: 0 0 4px #39ff1466;
+}
+
+.msgSender.theirs {
+    color: #ffb300;
+    text-shadow: 0 0 4px #ffb30066;
+}
+
+.msgText {
+    color: #c0e880;
+    word-break: break-word;
+}
+
+/* Input bar */
+.inputBar {
+    display: flex;
+    gap: 0;
+    border-top: 2px solid #1a3a08;
+    background: #060d01;
+}
+
+.inputBar input {
+    flex: 1;
+    background: #050505;
+    border: none;
+    border-right: 2px solid #1a3a08;
+    color: #a8d060;
+    font-family: body, monospace;
+    font-size: 0.8rem;
+    padding: 10px 12px;
+    outline: none;
+    caret-color: #39ff14;
+}
+
+.inputBar input::placeholder {
+    color: #2a4a10;
+}
+
+.inputBar input:focus {
+    border-right-color: #39ff14;
+}
+
+.sendBtn {
+    font-family: body, monospace;
+    font-size: 0.75rem;
+    background: transparent;
+    color: #39ff14;
+    border: none;
+    padding: 0 18px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background 0.1s, color 0.1s;
+}
+
+.sendBtn:hover {
+    background: #39ff14;
+    color: #050505;
+}
+
+.sendBtn:disabled {
+    color: #1a3a08;
+    cursor: default;
+}
+
+/* Loading / status */
+.loadingMsg {
+    padding: 8px 12px;
+    font-size: 0.7rem;
+    color: #39ff1488;
+    animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
+}
+
+/* Attach (📎) button */
+.attachBtn {
+    font-family: body, monospace;
+    font-size: 1rem;
+    background: transparent;
+    color: #4a7a20;
+    border: none;
+    border-right: 2px solid #1a3a08;
+    padding: 0 12px;
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+    flex-shrink: 0;
+}
+
+.attachBtn:hover:not(:disabled) {
+    color: #ffb300;
+    background: #0a1a02;
+}
+
+.attachBtn:disabled {
+    color: #1a3a08;
+    cursor: default;
+}
+
+/* File transfer message */
+.msgFile {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    color: #ffb300;
+    word-break: break-word;
+}
+
+.fileStatus {
+    font-size: 0.65rem;
+    color: #4a7a20;
+    font-style: italic;
+}
+
+.fileErr {
+    color: #ff4444;
+    text-shadow: 0 0 4px #ff444444;
+}
