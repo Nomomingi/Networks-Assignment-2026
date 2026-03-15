@@ -33,6 +33,10 @@ Assited by Claude AI for this implementation. Previous implementaion only allowe
 Important note, the files are stored in the downloads/group81 folder. Since our program will require users to run a unix based terminal, Windows userrs should check their WSL downloads folder for recived blobs.
 """
 
+# You only need one ngrok auth token now as we're only using ngrok for file transfers. The main server no longer needs to be exposed to the internet since we're using oracle cloud for hosting the main server. The P2P file transfer will be done via ngrok tunnels, so we need the auth token for that.
+
+
+
 load_dotenv()  # make sure NGROK_AUTHTOKEN from .env is in the environment
 
 CHUNK_SIZE = 65_536  # 64 KB per chunk
