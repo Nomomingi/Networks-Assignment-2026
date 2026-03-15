@@ -5,6 +5,31 @@ from db import DB
 import time
 import traceback
 
+"""TCP server for the chat application.
+
+This server is the *coordination point* for the app.
+
+What the server does
+- Accepts TCP client connections.
+- Reads text packets terminated by a blank line (`\n\n`).
+- Dispatches each packet based on its first line (the action name).
+- Uses `db.py` to persist users, private messages, groups, and group messages.
+- Pushes realtime events to online clients when they are actively viewing the
+  relevant chat.
+
+What the server does NOT do
+- It does not proxy file bytes. File sharing is peer-to-peer (see `p2p.py`).
+  The server only relays ngrok connection details.
+
+Realtime delivery model
+- `online_users`: username -> TCP socket (who is currently connected)
+- `active_chats`: username -> peer_username (which private chat is open)
+- `active_groups`: username -> group_id (which group chat is open)
+
+These in-memory dictionaries let the server decide whether to *push* an incoming
+message immediately, or just store it for later.
+"""
+
 online_users = {} # A dictionary to store the online users, and their sockets as a value.
 users_last_seen = {} # A dictionary to store when last they were seen on the server.
 online_lock = threading.Lock()
@@ -15,6 +40,14 @@ group_lock = threading.Lock()
 SLEEPY_TIME = 20 # Constant for the time taken for a user to sleep.
 
 def _proto(num: int) -> str | None:
+    """Safe protocol lookup.
+
+    The client sends action names like `LOGIN`. The code often compares those
+    names to `Protocol.initiate_protocol(<id>)`.
+
+    If the enum mapping differs between client and server versions,
+    `Protocol(num)` can raise. This helper keeps the server from crashing.
+    """
     try:
         return Protocol.initiate_protocol(num)
     except Exception:
@@ -22,6 +55,19 @@ def _proto(num: int) -> str | None:
 
 # Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
+    """Main per-client handler loop.
+
+    Runs in a dedicated thread per connection.
+
+    Loop:
+    - Read a full packet via `receive_packet()`.
+    - Identify the action from `packet[0]`.
+    - Call the appropriate handler.
+
+    Cleanup:
+    - Removes the user from `online_users`, `active_chats`, `active_groups`.
+    - Closes the DB connection and socket.
+    """
     username = None # Will store the username of the logged-in user for this connection
     db_local = DB()
     try:
@@ -109,6 +155,19 @@ def handle_client(connectionSocket: socket, address: tuple):
 
 # Handles login requests. 
 def handle_login(connectionSocket: socket, temp: list, current_user: str, db_local: DB):
+    """Handle `LOGIN` requests.
+
+    Request packet:
+        LOGIN
+        <username>
+        <password>
+
+    Response:
+        OK|LOGIN_SUCCESS
+    or an ERROR|... code.
+
+    On success, registers the socket in `online_users`.
+    """
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_LOGIN_FORMAT\n\n")
         return current_user
@@ -139,6 +198,11 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
     return u
 
 def handle_open_chat(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Open a private chat and return message history.
+
+    This sets `active_chats[username] = peer_username` so the server knows which
+    conversation the user is currently looking at.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -176,6 +240,11 @@ def handle_open_chat(connectionSocket: socket, username: str | None, temp: list,
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_close_chat(connectionSocket: socket, username: str | None, temp: list):
+    """Close a private chat.
+
+    This only updates server-side state (`active_chats`). It does not affect the
+    TCP connection.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -186,6 +255,11 @@ def handle_close_chat(connectionSocket: socket, username: str | None, temp: list
     send_message(connectionSocket, "OK|CHAT_CLOSED\n\n")
 
 def handle_get_contacts(connectionSocket: socket, username: str | None, db_local: DB):
+    """Return the user's contact list.
+
+    Contacts are derived from message history: anyone the user has exchanged a
+    private message with.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -212,6 +286,7 @@ def handle_get_contacts(connectionSocket: socket, username: str | None, db_local
     send_message(connectionSocket, "\n".join(lines) + "\n\n")
 
 def handle_search(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Search for usernames by substring."""
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -237,6 +312,7 @@ def handle_search(connectionSocket: socket, username: str | None, temp: list, db
     send_message(connectionSocket, "\n".join(lines) + "\n\n")
 
 def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
+    """Handle `CREATE` requests to register a new user."""
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_CREATE_FORMAT\n\n")
         return
@@ -258,6 +334,15 @@ def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")
 
 def handle_private_message(connectionSocket: socket, sender_username: str | None, temp: list, db_local: DB):
+    """Store a private message and optionally push it in realtime.
+
+    The message is always stored in the DB.
+
+    Realtime push only occurs when:
+    - The receiver is online, and
+    - The receiver has the sender's chat currently open
+      (`active_chats[receiver] == sender`).
+    """
     if not sender_username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -302,6 +387,7 @@ def handle_private_message(connectionSocket: socket, sender_username: str | None
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_group_create(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Create a new group and add initial members."""
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -340,6 +426,7 @@ def handle_group_create(connectionSocket: socket, username: str | None, temp: li
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_group_list(connectionSocket: socket, username: str | None, db_local: DB):
+    """List all groups the user is a member of."""
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -363,6 +450,11 @@ def handle_group_list(connectionSocket: socket, username: str | None, db_local: 
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
          
 def handle_group_open(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Enter a group chat and return message history.
+
+    This records `active_groups[username] = group_id` so the server can push
+    realtime group messages only to users who are currently inside that group.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -400,6 +492,11 @@ def handle_group_open(connectionSocket: socket, username: str | None, temp: list
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
     
 def handle_group_message(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Store a group message and broadcast it to online users in the group.
+
+    Current behavior: only users who are online *and* currently inside the group
+    (`active_groups[user] == group_id`) receive realtime pushes.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -460,6 +557,7 @@ def handle_group_message(connectionSocket: socket, username: str | None, temp: l
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_group_close(connectionSocket: socket, username: str | None, temp: list):
+    """Leave the currently open group chat (clears `active_groups`)."""
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -471,6 +569,7 @@ def handle_group_close(connectionSocket: socket, username: str | None, temp: lis
     send_message(connectionSocket, "OK|GROUP_CLOSED\n\n")
 
 def handle_group_add_member(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Add a new member to an existing group."""
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -517,6 +616,16 @@ def handle_group_add_member(connectionSocket: socket, username: str | None, temp
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
 
 def handle_group_send_blob(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    """Relay a group file offer to active group members.
+
+    The server only relays:
+    - group_id
+    - sender username
+    - ngrok host/port
+    - filename
+
+    Actual file bytes are transferred P2P after recipients connect.
+    """
     if not username:
         send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
         return
@@ -628,6 +737,12 @@ def handle_send_blob(connectionSocket: socket, sender_username: str | None, temp
 # The good thing about this entire scenario is that we only need to store the effect as:
 # PING|Username
 def udp_server() -> None:
+    """UDP ping server.
+
+    Clients periodically send `PING|<username>` over UDP.
+    If a user stops pinging, `check_sleepy_accounts()` will remove them from
+    `online_users`.
+    """
     serverPort = 14400 
     serverSocket = socket(AF_INET, SOCK_DGRAM)
     serverSocket.bind(('0.0.0.0', serverPort))
@@ -644,6 +759,7 @@ def udp_server() -> None:
 
 # Logs users who haven't sent out a ping to the UDP server out of the TCP server.
 def check_sleepy_accounts():
+    """Background cleanup thread for users that stopped sending UDP pings."""
     print("The sleepy thread is running.")
     while True:
         time.sleep(SLEEPY_TIME)
@@ -657,6 +773,7 @@ def check_sleepy_accounts():
                         del online_users[user]
 
 def main():
+    """Start the TCP server, plus UDP ping threads, and accept clients forever."""
     serverPort = 14532
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.bind(('0.0.0.0', serverPort))
@@ -675,14 +792,17 @@ def main():
     
 # Sends a message to the client for simplicity.
 def send_message(connectionSocket: socket, message: str) -> None:
+    """Send a UTF-8 encoded message to a client socket."""
     connectionSocket.sendall(message.encode())
 
 # Receives a message from the client.
 def receive_message(connectionSocket: socket) -> str:
+    """Receive up to 1024 bytes and decode as UTF-8."""
     return connectionSocket.recv(1024).decode()
 
 # 
 def receive_packet(connectionSocket: socket) -> list:
+    """Receive a full `\n\n`-terminated packet and return it split by lines."""
     data = ""
     while True:
         chunk = connectionSocket.recv(1024).decode(errors= "ignore")

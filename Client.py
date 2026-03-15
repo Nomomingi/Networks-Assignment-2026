@@ -1,6 +1,29 @@
 # The client program, which must be run after the server. 
 # Using ngrok means we need to change both the Server Port and Server Name during each test.
 
+"""Terminal client for the chat application.
+
+This client connects to `Server.py` over TCP and speaks a simple text protocol.
+
+Packet framing
+- Messages are sent as multiple lines separated by `\n`.
+- Each packet ends with a blank line (`\n\n`).
+- Line 0 is always the action (e.g. `LOGIN`, `PRIVATE`, `GROUP_MESSAGE`).
+
+Program structure
+- The UI is a small *state machine*.
+- The global `currentState` determines which menu or chat loop runs.
+- `state_control()` repeatedly dispatches to the handler for the active state.
+
+Realtime behavior
+- During private/group chats, a background receiver thread reads packets from
+  the server and prints incoming messages while you type.
+
+File transfer
+- Files are transferred peer-to-peer using `p2p.py` and ngrok.
+- The server is only used for signaling (sharing the ngrok host/port).
+"""
+
 # These modules in particular are used to modify the output in the terminal.
 import sys
 from termcolor import colored, cprint
@@ -34,6 +57,12 @@ currentState = ClientStates.State.MAIN_MENU
 
 # Method that transitions between states in the terminal menu.
 def state_control(clientSocket: socket) -> ClientStates.State:
+    """Main dispatcher loop for the client's state machine.
+
+    Each state corresponds to a function like `load_main_menu()` or
+    `start_private_chat()`. Those functions update the global `currentState`
+    which determines what runs next.
+    """
     
     while currentState != ClientStates.State.CLOSE:
         cprint(f"{currentState}", "cyan")
@@ -66,6 +95,7 @@ def state_control(clientSocket: socket) -> ClientStates.State:
     pass
 
 def load_main_menu(clientSocket: socket) -> None:
+    """Show the first menu (login / create account / close) and update state."""
     global currentState
     global username
     username = None
@@ -98,6 +128,11 @@ def load_main_menu(clientSocket: socket) -> None:
 
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
+    """Prompt for username/password and send a `LOGIN` request.
+
+    On success, starts a background UDP ping thread (`send_ping`) so the server
+    can track that this user is still active.
+    """
     global currentState
     global username
 
@@ -130,6 +165,7 @@ def log_in(clientSocket: socket) -> None:
 
 # Made independently from the log_in function just for sanity's sake.
 def create_account(clientSocket: socket) -> None:
+    """Prompt for username/password and send a `CREATE` request."""
     global currentState
     global username
 
@@ -161,6 +197,7 @@ def create_account(clientSocket: socket) -> None:
 # 3.) Form a group. This allows the user to form a group, of up to 5 people. TODO: Check Assignment doc for specified amount.
 # 4.) A log out button. Mostly client side, will give the user the option to either currentState'[Y/n]'.
 def load_account_menu(clientSocket: socket, username: str) -> None:
+    """Show the account menu and update state based on the user's choice."""
     global currentState
 
     try:
@@ -199,6 +236,11 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
         currentState = ClientStates.State.CLOSE
 
 def handle_user_contacts(clientSocket, username) -> None:
+    """Fetch contact list from the server and transition into a private chat.
+
+    The request is `CONTACTS`.
+    The response is an `OK|CONTACTS` packet with one username per line.
+    """
     global peer_username
     global currentState
 
@@ -302,6 +344,18 @@ def handle_user_contacts(clientSocket, username) -> None:
 #         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
 
 def start_private_chat(clientSocket: socket, my_username: str, peer_username: str):
+    """Interactive private chat UI.
+
+    Flow:
+    - Send `OPEN_CHAT` to fetch history.
+    - Start a background receiver thread to print `INCOMING_PRIVATE` and
+      `BLOB_OFFER` events.
+    - Switch terminal to raw mode so we can support editing and commands.
+
+    Supported commands:
+    - `/exit` leaves the chat.
+    - `/sendfile <path>` starts a P2P transfer via `p2p.send_blob()`.
+    """
     global currentState
 
     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
@@ -453,6 +507,11 @@ def log_out(clientSocket: socket, username: str) -> bool:
 
 
 def handle_search(clientSocket: socket, username: str) -> None:
+    """Search users by substring and transition into a private chat.
+
+    Sends a `SEARCH` request with the search term on the next line.
+    The response is `OK|SEARCH` followed by matching usernames.
+    """
     global currentState
     global peer_username
     search = input("Search for a user (Enter '/exit' to stop):\t")
@@ -497,6 +556,17 @@ def handle_search(clientSocket: socket, username: str) -> None:
     pass
 
 def handle_group_making(clientSocket: socket, username: str) -> None:
+    """Create a group chat.
+
+    Builds a `GROUP_CREATE` packet:
+        GROUP_CREATE
+        <group_name>
+        <member_username>
+        <member_username>
+        ...
+
+    The server returns `OK|GROUP_CREATED|<group_id>`.
+    """
     global currentState
 
     group_name = input("Enter group name: ").strip()
@@ -543,6 +613,7 @@ def handle_group_making(clientSocket: socket, username: str) -> None:
     # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
 
 def handle_group_list(clientSocket: socket, username: str) -> None:
+    """Fetch the current user's groups and transition into a selected group."""
     global currentState
     global group_id
     global group_name
@@ -602,6 +673,21 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
     currentState = ClientStates.State.GROUP
 
 def start_group_chat(clientSocket: socket, my_username: str, group_id: str, group_name: str):
+    """Interactive group chat UI.
+
+    Flow:
+    - Send `GROUP_OPEN` to fetch message history.
+    - Start a receiver thread that prints:
+      - `INCOMING_GROUP` messages
+      - `GROUP_BLOB_OFFER` file offers
+    - Switch terminal to raw mode so typing and incoming messages can coexist.
+
+    Supported commands:
+    - `/exit` leave the group.
+    - `/add <username>` add a new member (server-side membership check).
+    - `/sendfile <path>` send a file to online members currently inside the
+      group chat using `p2p.send_group_blob()`.
+    """
     global currentState
 
     send_message(clientSocket, f"{Protocol.initiate_protocol(14)}\n{group_id}\n\n")
@@ -770,6 +856,7 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
 
 # Will be defined in much more detail later.
 def close_program(clientSocket: socket) -> None:
+    """Send `CLOSE` to the server and exit the program."""
     send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
 
     output = receive_message(clientSocket).strip()
@@ -781,6 +868,7 @@ def close_program(clientSocket: socket) -> None:
     pass
 
 def main():
+    """Connect to the TCP server and start the UI state machine."""
     try:
         serverName = SERVER_NAME
         serverPort = TCP_SERVER_PORT
@@ -796,21 +884,25 @@ def main():
 
 # Sends a message to the server for simplicity. Good for small messages
 def send_message(clientSocket: socket, message: str) -> None:
+    """Send a UTF-8 encoded message to the server over TCP."""
     clientSocket.sendall(message.encode())
     pass
 
 # UDP equivalent of the send_message method. 
 def send_message_udp(message: str, udpSocket: socket, ip: str, port: int) -> None:
+    """Send a single UDP datagram (used for pings)."""
     udpSocket.sendto(message.encode(), (ip, port))
     pass
 
 # Receives a message from the server.
 def receive_message(clientSocket: socket) -> str:
+    """Receive a single TCP recv() chunk (up to 1024 bytes) and decode it."""
     return clientSocket.recv(1024).decode()
 
 # Much more elaborate variation of the receive_packet method,
 # which receives the entire message in chunks rather than preemptively truncating it.
 def receive_packet(clientSocket: socket) -> list:
+    """Receive a full `\n\n`-terminated packet and return it split by lines."""
     data = ""
     while True:
         chunk = clientSocket.recv(1024).decode(errors="ignore")
@@ -824,6 +916,14 @@ def receive_packet(clientSocket: socket) -> list:
 
 # Client side implementation of the ping system for UDP.
 def send_ping(username: str, event: threading.Event) -> None:
+    """Background UDP ping loop.
+
+    Every `PING_TIME` seconds this sends:
+        `PING|<username>`
+
+    to the server's UDP port. The server uses this to time users out when they
+    stop sending pings.
+    """
     clientSocket = socket(AF_INET, SOCK_DGRAM)
     try:
         while not event.is_set():
