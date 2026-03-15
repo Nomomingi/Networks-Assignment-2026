@@ -25,18 +25,20 @@ import time
 import ClientStates # Custom made, see ClientStates.py
 
 PING_TIME = 5
-SERVER_NAME = '145.241.187.87'
+SERVER_NAME = '145.241.187.87' # Of the Oracle Server.
 TCP_SERVER_PORT = 14532
 UDP_SERVER_PORT = 14400
+CHARACTER_LIMIT = 250
 console = Console()
 
 currentState = ClientStates.State.MAIN_MENU
 
-# Method that transitions between states in the terminal menu.
 def state_control(clientSocket: socket) -> ClientStates.State:
-    
+    '''Acts as the main hub for the currentState. 
+    The currentState is global and modified within the methods of this program.
+    '''   
     while currentState != ClientStates.State.CLOSE:
-        cprint(f"{currentState}", "cyan")
+        #cprint(f"{currentState}", "cyan")
         try:
             match currentState:
                 case ClientStates.State.MAIN_MENU:
@@ -66,6 +68,11 @@ def state_control(clientSocket: socket) -> ClientStates.State:
     pass
 
 def load_main_menu(clientSocket: socket) -> None:
+    '''The main menu of the program, with the following options:'
+    1.) Login, which allows the user to login to an account they own.
+    2.) Create Account, which allows the user to create their account.
+    3.) Close program, which kills the clientSocket.
+    '''
     global currentState
     global username
     username = None
@@ -75,7 +82,7 @@ def load_main_menu(clientSocket: socket) -> None:
         console.print(
             Panel(
                 "1. Log-in\n2. Create Account\n3. Close Program",
-                title="[bold]Main Menu[/bold]",
+                title="[cyan bold]Main Menu[/bold cyan]", border_style="cyan",
                 expand=False,
                 padding=(0,1)
             )
@@ -90,6 +97,8 @@ def load_main_menu(clientSocket: socket) -> None:
                 currentState = ClientStates.State.CREATE_ACCOUNT
             case 3:
                 currentState = ClientStates.State.CLOSE
+            case _:
+                cprint("Please enter a number between 1 and 3.", "red")
 
     except KeyboardInterrupt:
         currentState = ClientStates.State.CLOSE
@@ -110,7 +119,7 @@ def log_in(clientSocket: socket) -> None:
 
     match output:
         case "OK|LOGIN_SUCCESS":
-            cprint("Login successful!", "green")
+            cprint("\nLogin successful!", "green")
             # The UDP thread is created. This will send frequent pings to the server to communicate the user isn't sleeping.
             event = threading.Event()
             udpThread = threading.Thread(target = send_ping, args = (username, event), daemon = True)
@@ -155,12 +164,16 @@ def create_account(clientSocket: socket) -> None:
             cprint(f"Unexpected server message:\t{output}", "red")
     username = None
 
-# Loads the data of a newly logged in user to the terminal. This data includes:
-# 1.) The user's 'contacts'. This leads to the list of contacts that the user has communicated with in the past. Text and media can be exchanged here (Media only if the other user is online (because of UDP)).
-# 2.) A search menu. This allows the user to look for other users to send messages to. No need for authorisation for users to communicate for now (you can just send messages to whoever at whatever time).
-# 3.) Form a group. This allows the user to form a group, of up to 5 people. TODO: Check Assignment doc for specified amount.
-# 4.) A log out button. Mostly client side, will give the user the option to either currentState'[Y/n]'.
 def load_account_menu(clientSocket: socket, username: str) -> None:
+    '''
+    Loads the data of a newly logged in user to the terminal. This data includes:
+    1.) The user's 'contacts'. This leads to the list of contacts that the user has communicated with in the past. Text and media can be exchanged here (Media only if the other user is online (because of UDP)).
+    2.) The user's group chats. Shows a list of them (if in any).
+    3.) A search menu. This allows the user to look for other users to send messages to. No need for authorisation for users to communicate for now (you can just send messages to whoever at whatever time).
+    4.) Allows the client to make a Group chat.
+    5.) A log out button. Mostly client side, will give the user the option to either currentState'[Y/n]'.
+    '''
+     
     global currentState
 
     try:
@@ -169,7 +182,8 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
         cprint(account_banner, "cyan")
 
         console.print(Panel("1. Check contacts\n2. Check groups\n3. Search Contact\n4. Make Group\n5. Log out",
-            title="[bold]Account Menu[/bold]",
+            title="[cyan bold]Account Menu[/bold cyan]",
+            border_style="cyan",
             expand=False,
             padding=(0,1) ))
         
@@ -185,7 +199,8 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
             case 4:
                 currentState = ClientStates.State.MAKE_GROUP
             case 5:
-                logout = str(input("You will be logged out (Type '/exit' to confirm.) >\t"))
+                console.print("[red]You will be logged out (Type [bold yellow]/exit[/bold yellow] to confirm)[/red]")
+                logout = str(input("> "))
                 if logout == "/exit":
                     currentState = ClientStates.State.MAIN_MENU
                 else:
@@ -194,11 +209,13 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 cprint("Please enter a number between 1 and 5.", "red")
                 
     except ValueError:
-        print("Please enter a number.")
+        cprint("Please enter a number.", "red")
     except KeyboardInterrupt:
         currentState = ClientStates.State.CLOSE
 
 def handle_user_contacts(clientSocket, username) -> None:
+    '''Displays the contacts of the user (if any). '''
+
     global peer_username
     global currentState
 
@@ -221,12 +238,24 @@ def handle_user_contacts(clientSocket, username) -> None:
         return
 
     print("Your contacts:")
+    contact_entries = []
     for i, c in enumerate(contacts, start=1):
         if c == username:
             continue
-        print(f"{i}) {c}")
+            
+        if "|" in c:
+            name, status = c.split("|")
+            status_display = "[green]● Online[/green]" if status == "ONLINE" else "[white dim]○ Offline[/white dim]"
+            contact_entries.append(f"{i}) [bold]{name:<20}[/bold] {status_display}")
+        else:
+            contact_entries.append(f"{i}) {c}")
 
-    selection = input("Select a contact number to chat, or press Enter to go back: ").strip()
+    panel_content = "\n".join(contact_entries)
+
+    console.print(Panel(panel_content, title="[bold blue]Your Contacts[/bold blue]", subtitle="[dim]Select a number to start chatting[/dim]",expand=False,border_style="cyan", padding=(1, 2)))
+
+    selection = input("\nOR Press Enter to go back.").strip()
+
     if not selection:
         currentState = ClientStates.State.ACCOUNT_MENU
         return
@@ -241,67 +270,17 @@ def handle_user_contacts(clientSocket, username) -> None:
         print("Invalid selection.")
         return
 
-    peer_username = contacts[idx - 1]
+    temp_peer_username = contacts[idx - 1]
+    peer_username = temp_peer_username.split("|")[0] if "|" in temp_peer_username else temp_peer_username
+
     currentState = ClientStates.State.CHAT
 
-# def start_private_chat(clientSocket: socket, my_username, peer_username):
-#     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
-#     packet = receive_packet(clientSocket)
-#     if not packet:
-#         print("No response from server.")
-#         return
-
-#     header = packet[0].strip()
-#     if header == "ERROR|NO_SUCH_USER":
-#         print("No such user.")
-#         return
-#     if header == "ERROR|DB_ERROR":
-#         print("Database error.")
-#         return
-#     if header != "OK|CHAT_HISTORY":
-#         print("Unexpected server message:\t", header)
-#         return
-
-#     print(f"--- Chat with {peer_username} (type /exit to leave) ---")
-#     for line in packet[1:]:
-#         line = line.strip()
-#         if not line:
-#             continue
-#         parts = line.split("|", 2)
-#         if len(parts) == 3:
-#             sender, msg, ts = parts
-#             print(f"[{ts}] {sender}: {msg}")
-
-#     stop_event = threading.Event()
-
-#     def receiver_loop():
-#         while not stop_event.is_set():
-#             incoming = receive_packet(clientSocket)
-#             if not incoming:
-#                 break
-#             kind = incoming[0].strip()
-#             if kind == "INCOMING_PRIVATE" and len(incoming) >= 3:
-#                 sender = incoming[1].strip()
-#                 msg = incoming[2].strip()
-#                 if sender == peer_username:
-#                     print(f"{peer_username}: {msg}")
-            
-#     t = threading.Thread(target=receiver_loop, daemon=True)
-#     t.start()
-
-#     try:
-#         while True:
-#             msg = input("you> ")
-#             if msg.strip() == "/exit":
-#                 break
-#             if not msg.strip():
-#                 continue
-#             send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
-#     finally:
-#         stop_event.set()
-#         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
-
 def start_private_chat(clientSocket: socket, my_username: str, peer_username: str):
+    '''
+    Allows the user to engage in a private chat with another account. Commands are given as follows:
+    1.) /sendfile allows the user to send a file to another user (the file's absolute path is important here).
+    2.) /exit allows the user to exit the chat.
+    '''
     global currentState
 
     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
@@ -321,7 +300,14 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
         print("Unexpected server message:\t", header)
         return
 
-    print(f"\n--- Chat with {peer_username} (Type '/exit' to leave) ---")
+    chat_menu = (
+        f"Now chatting with [green bold]{peer_username}[/green bold].\n\n"
+        "1.) [purple bold]/sendfile[/purple bold] [yellow]<absolute path>[/yellow]: Send a file.\n"
+        "2.) [purple bold]/exit[/purple bold]: Leave the chat."
+    )
+
+    console.print(Panel(chat_menu, title="[bold cyan]Private Chat[/bold cyan]", expand=False, border_style="bright_magenta"))
+
     for line in packet[1:]:
         line = line.strip()
         if not line:
@@ -418,17 +404,21 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
                 with buffer_lock:
                     if input_buffer:
                         input_buffer.pop()
-                sys.stdout.write("\b \b")
-                sys.stdout.flush()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    else:
+                        sys.stdout.write("\a") 
+                        sys.stdout.flush() 
 
             elif ch == "\x03":  # Ctrl+C
                 break
 
             else:
                 with buffer_lock:
-                    input_buffer.append(ch)
-                sys.stdout.write(ch)
-                sys.stdout.flush()
+                    if len(input_buffer) < CHARACTER_LIMIT:
+                        input_buffer.append(ch)
+                        sys.stdout.write(ch)
+                        sys.stdout.flush()
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -437,64 +427,69 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
         t.join(timeout=1.0)
 
 
-def log_out(clientSocket: socket, username: str) -> bool:
-    while True:
-        confirmation = str(input("Are you sure? [Y/n]\n")) 
-        if confirmation.lower() in ['y', 'n']:
-            break
-
-    if confirmation.lower() == 'y':
-        send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n") # Log out protocol
-        output = receive_message(clientSocket).strip()
-        if output == "OK|BYE":
-            print("Logged out successfully!")
-            return True
-    return False
-
-
 def handle_search(clientSocket: socket, username: str) -> None:
+    '''Searches for the user within the database, according to specified username
+    A slight tangent, but the user is able to search for themselves, and interact with themselves.
+    Bug, or a stroke of genius? Who knows anymore.
+    '''
+
     global currentState
     global peer_username
-    search = input("Search for a user (Enter '/exit' to stop):\t")
 
-    if search == "/exit":
-        print()
-        currentState = ClientStates.State.ACCOUNT_MENU
+    while True:
+        search = input("Search for a user (Enter '/exit' to stop):\t").strip()
 
-    send_message(clientSocket, f"{Protocol.initiate_protocol(5)}\n{search}\n\n")
-    packet = receive_packet(clientSocket)
-    if not packet:
-        print("No response from server.")
+        if search == "/exit":
+            currentState = ClientStates.State.ACCOUNT_MENU
+            return
 
-    header = packet[0].strip()
-    if header != "OK|SEARCH":
-        print("Unexpected server message:\t", header)
-
-    results = [line.strip() for line in packet[1:] if line.strip()]
-    if not results:
-        print("No matches.")
+        send_message(clientSocket, f"{Protocol.initiate_protocol(5)}\n{search}\n\n")
+        response = receive_packet(clientSocket)
         
+        if not response:
+            print("No response from server.")
+            return
 
-    print("Matches:")
-    for i, u in enumerate(results, start=1):
-        print(f"{i}) {u}")
+        header = response[0].strip()
+        if header != "OK|SEARCH":
+            print(f"Error: {header}")
+            continue # Do another search
 
-    selection = input("Select a user number to chat, or press Enter to search again: ").strip()
-
-    try:
-        idx = int(selection)
-    except ValueError:
-        print("Invalid selection.")
-        return
-    
-    if idx < 1 or idx > len(results):
-        print("Invalid selection.")
-    
-
-    peer_username = results[idx - 1]
-    currentState = ClientStates.State.CHAT
+        results = [line.strip() for line in response[1:] if line.strip()]
         
-    pass
+        if not results:
+            print(f"No matches found for '{search}'.")
+            continue # Goes back to the top
+        
+        display_lines = []
+        for i, u in enumerate(results, start=1):
+            name = u.split("|")[0] if "|" in u else u
+            status = u.split("|")[1] if "|" in u else "OFFLINE"
+            
+            if status == "ONLINE":
+                display_lines.append(f"{i}) [green bold]{name:<20}● Online[/green bold]")
+            else:
+                display_lines.append(f"{i}) {name:<20}\t [white dim]○ Offline[/white dim]")
+
+        panel_content = "\n".join(display_lines)
+        console.print(Panel(panel_content, title=f"[bold blue]Matches for '{search}'[/bold blue]", subtitle="[dim]Select a number to start chat.[dim]", expand=False, border_style="cyan"))
+
+        selection = input("\nSelect a number to chat, or Enter to search again: ").strip()
+        
+        if not selection:
+            continue # Goes back to the top
+
+        try:
+            idx = int(selection)
+            if 1 <= idx <= len(results):
+                temp = results[idx - 1]
+                peer_username = temp.split("|")[0] if "|" in temp else temp
+                currentState = ClientStates.State.CHAT
+                return # Successfully found a user, exit the search loop
+            else:
+                print("Invalid selection number.")
+        except ValueError:
+            print("Please enter a valid number.")
 
 def handle_group_making(clientSocket: socket, username: str) -> None:
     global currentState
@@ -540,9 +535,11 @@ def handle_group_making(clientSocket: socket, username: str) -> None:
 
     currentState = ClientStates.State.ACCOUNT_MENU
     
-    # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
-
 def handle_group_list(clientSocket: socket, username: str) -> None:
+    '''
+    Makes a list of the groups that a user is in currently.
+    '''
+
     global currentState
     global group_id
     global group_name
@@ -570,8 +567,8 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
             groups.append((group_id, group_name))
 
     if not groups:
-        print("You are not in any groups yet.")
-        input("Press enter to continue...")
+        cprint("You are not in any groups yet.", "red")
+        input("Press enter to continue.")
         sys.stdout.write("\r" + " " * 100 + "\r")
         sys.stdout.flush()
 
@@ -580,10 +577,18 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
         return
     
     print("Your groups:")
-    for i, (_, group_name) in enumerate(groups, start=1):
-        print(f"{i}) {group_name}")
+    group_entries = []
+    for i, (group_id, group_name) in enumerate(groups, start=1):
+        group_entries.append(f"{i}) [bold]{group_name:<20}[/bold] [purple](ID: {group_id})[/purple]")
+
+    if not group_entries:
+        panel_content = "[italic white dim]No groups found.[/italic white dim]"
+    else:
+        panel_content = "\n".join(group_entries)
+
+    console.print(Panel(panel_content, title="[bold cyan]Your Group Chats[/bold cyan]", subtitle="[dim]Select a number to to start chat[/dim]", expand=False,border_style="cyan",padding=(1, 2)))
     
-    selection = input("Select a group number to open, or press Enter to go back: ").strip()
+    selection = input("\nOR Press Enter to go back.").strip()
     if not selection:
         currentState = ClientStates.State.ACCOUNT_MENU
         return
@@ -602,27 +607,42 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
     currentState = ClientStates.State.GROUP
 
 def start_group_chat(clientSocket: socket, my_username: str, group_id: str, group_name: str):
+    '''
+    Allows the user to engage in a group chat with other accounts. Commands are given as follows:
+    1.) /sendfile allows the user to send a file to another user (the file's absolute path is important here).
+    2.) /add allows the user to add a member to the group.
+    3.) /exit allows the user to exit the chat.
+    '''
+
     global currentState
 
     send_message(clientSocket, f"{Protocol.initiate_protocol(14)}\n{group_id}\n\n")
     packet = receive_packet(clientSocket)
 
     if not packet:
-        print("No response from server.")
+        cprint("No response from server.", "red")
         return
     
     header = packet[0].strip()
     if header == "ERROR|NOT_IN_GROUP":
-        print("You are not a member of this group.")
+        cprint("You are not a member of this group.", "red")
         return
     if header == "ERROR|DB_ERROR":
-        print("Database error.")
+        cprint("Database error.", "red")
         return
     if header != "OK|GROUP_HISTORY":
-        print("Unexpected server message: ", header)
+        cprint(f"Unexpected server message: {header}", "red")
         return
     
-    print(f"\n---Group chat: {group_name} (Type '/exit' to leave, and '/add [USERNAME]' to add someone)---")
+    chat_menu = (
+        f"Now chatting with [green bold]{group_name}[/green bold].\n\n"
+        "1.) [purple bold]/sendfile[/purple bold] [yellow]<absolute path>[/yellow]: Send a file.\n"
+        "1.) [purple bold]/add[/purple bold] [yellow]<username>[/yellow]: Adds a member to the group.\n"
+        "3.) [purple bold]/exit[/purple bold]: Leave the chat."
+    )
+
+    console.print(Panel(chat_menu, title="[bold cyan]Group Chat[/bold cyan]", expand=False, border_style="bright_magenta"))
+
     for line in packet[1:]:
         line = line.strip()
         if not line:
@@ -752,8 +772,11 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
                 with buffer_lock:
                     if input_buffer:
                         input_buffer.pop()
-                sys.stdout.write("\b \b")
-                sys.stdout.flush()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    else:
+                        sys.stdout.write("\a") 
+                        sys.stdout.flush()                     
 
             elif ch == "\x03":
                 break
@@ -768,8 +791,8 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
         send_message(clientSocket, f"{Protocol.initiate_protocol(16)}\n{group_id}\n\n")
         t.join(timeout=1.0)
 
-# Will be defined in much more detail later.
 def close_program(clientSocket: socket) -> None:
+    '''Disconnects the user from the socket.'''
     send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
 
     output = receive_message(clientSocket).strip()
