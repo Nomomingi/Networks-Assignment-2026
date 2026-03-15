@@ -33,11 +33,12 @@ console = Console()
 
 currentState = ClientStates.State.MAIN_MENU
 
-# Method that transitions between states in the terminal menu.
 def state_control(clientSocket: socket) -> ClientStates.State:
-    
+    '''Acts as the main hub for the currentState. 
+    The currentState is global and modified within the methods of this program.
+    '''   
     while currentState != ClientStates.State.CLOSE:
-        cprint(f"{currentState}", "cyan")
+        #cprint(f"{currentState}", "cyan")
         try:
             match currentState:
                 case ClientStates.State.MAIN_MENU:
@@ -67,6 +68,11 @@ def state_control(clientSocket: socket) -> ClientStates.State:
     pass
 
 def load_main_menu(clientSocket: socket) -> None:
+    '''The main menu of the program, with the following options:'
+    1.) Login, which allows the user to login to an account they own.
+    2.) Create Account, which allows the user to create their account.
+    3.) Close program, which kills the clientSocket.
+    '''
     global currentState
     global username
     username = None
@@ -91,6 +97,8 @@ def load_main_menu(clientSocket: socket) -> None:
                 currentState = ClientStates.State.CREATE_ACCOUNT
             case 3:
                 currentState = ClientStates.State.CLOSE
+            case _:
+                cprint("Please enter a number between 1 and 3.", "red")
 
     except KeyboardInterrupt:
         currentState = ClientStates.State.CLOSE
@@ -201,7 +209,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 cprint("Please enter a number between 1 and 5.", "red")
                 
     except ValueError:
-        print("Please enter a number.")
+        cprint("Please enter a number.", "red")
     except KeyboardInterrupt:
         currentState = ClientStates.State.CLOSE
 
@@ -238,7 +246,7 @@ def handle_user_contacts(clientSocket, username) -> None:
         if "|" in c:
             name, status = c.split("|")
             status_display = "[green]● Online[/green]" if status == "ONLINE" else "[white dim]○ Offline[/white dim]"
-            contact_entries.append(f"{i}) [bold]{name:<15}[/bold] {status_display}")
+            contact_entries.append(f"{i}) [bold]{name:<20}[/bold] {status_display}")
         else:
             contact_entries.append(f"{i}) {c}")
 
@@ -246,7 +254,8 @@ def handle_user_contacts(clientSocket, username) -> None:
 
     console.print(Panel(panel_content, title="[bold blue]Your Contacts[/bold blue]", subtitle="[dim]Select a number to start chatting[/dim]",expand=False,border_style="cyan", padding=(1, 2)))
 
-    selection = input("Select a contact number to chat, or press Enter to go back: ").strip()
+    selection = input("\nOR Press Enter to go back.").strip()
+
     if not selection:
         currentState = ClientStates.State.ACCOUNT_MENU
         return
@@ -419,6 +428,11 @@ def start_private_chat(clientSocket: socket, my_username: str, peer_username: st
 
 
 def handle_search(clientSocket: socket, username: str) -> None:
+    '''Searches for the user within the database, according to specified username
+    A slight tangent, but the user is able to search for themselves, and interact with themselves.
+    Bug, or a stroke of genius? Who knows anymore.
+    '''
+
     global currentState
     global peer_username
 
@@ -453,9 +467,9 @@ def handle_search(clientSocket: socket, username: str) -> None:
             status = u.split("|")[1] if "|" in u else "OFFLINE"
             
             if status == "ONLINE":
-                display_lines.append(f"{i}) [green bold]{name:<15}● Online[/green bold]")
+                display_lines.append(f"{i}) [green bold]{name:<20}● Online[/green bold]")
             else:
-                display_lines.append(f"{i}) {name:<15}\t [white dim]○ Offline[/white dim]")
+                display_lines.append(f"{i}) {name:<20}\t [white dim]○ Offline[/white dim]")
 
         panel_content = "\n".join(display_lines)
         console.print(Panel(panel_content, title=f"[bold blue]Matches for '{search}'[/bold blue]", subtitle="[dim]Select a number to start chat.[dim]", expand=False, border_style="cyan"))
@@ -468,7 +482,6 @@ def handle_search(clientSocket: socket, username: str) -> None:
         try:
             idx = int(selection)
             if 1 <= idx <= len(results):
-                # CLEAN THE USERNAME before saving
                 temp = results[idx - 1]
                 peer_username = temp.split("|")[0] if "|" in temp else temp
                 currentState = ClientStates.State.CHAT
@@ -522,9 +535,11 @@ def handle_group_making(clientSocket: socket, username: str) -> None:
 
     currentState = ClientStates.State.ACCOUNT_MENU
     
-    # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
-
 def handle_group_list(clientSocket: socket, username: str) -> None:
+    '''
+    Makes a list of the groups that a user is in currently.
+    '''
+
     global currentState
     global group_id
     global group_name
@@ -552,8 +567,8 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
             groups.append((group_id, group_name))
 
     if not groups:
-        print("You are not in any groups yet.")
-        input("Press enter to continue...")
+        cprint("You are not in any groups yet.", "red")
+        input("Press enter to continue.")
         sys.stdout.write("\r" + " " * 100 + "\r")
         sys.stdout.flush()
 
@@ -564,7 +579,7 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
     print("Your groups:")
     group_entries = []
     for i, (group_id, group_name) in enumerate(groups, start=1):
-        group_entries.append(f"{i}) [bold]{group_name:<18}[/bold] [purple](ID: {group_id})[/purple]")
+        group_entries.append(f"{i}) [bold]{group_name:<20}[/bold] [purple](ID: {group_id})[/purple]")
 
     if not group_entries:
         panel_content = "[italic white dim]No groups found.[/italic white dim]"
@@ -573,7 +588,7 @@ def handle_group_list(clientSocket: socket, username: str) -> None:
 
     console.print(Panel(panel_content, title="[bold cyan]Your Group Chats[/bold cyan]", subtitle="[dim]Select a number to to start chat[/dim]", expand=False,border_style="cyan",padding=(1, 2)))
     
-    selection = input("Select a group number to open, or press Enter to go back: ").strip()
+    selection = input("\nOR Press Enter to go back.").strip()
     if not selection:
         currentState = ClientStates.State.ACCOUNT_MENU
         return
@@ -605,18 +620,18 @@ def start_group_chat(clientSocket: socket, my_username: str, group_id: str, grou
     packet = receive_packet(clientSocket)
 
     if not packet:
-        print("No response from server.")
+        cprint("No response from server.", "red")
         return
     
     header = packet[0].strip()
     if header == "ERROR|NOT_IN_GROUP":
-        print("You are not a member of this group.")
+        cprint("You are not a member of this group.", "red")
         return
     if header == "ERROR|DB_ERROR":
-        print("Database error.")
+        cprint("Database error.", "red")
         return
     if header != "OK|GROUP_HISTORY":
-        print("Unexpected server message: ", header)
+        cprint(f"Unexpected server message: {header}", "red")
         return
     
     chat_menu = (
