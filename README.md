@@ -30,8 +30,43 @@ make env
         source .env && mysql -u $DB_USER -p -e "USE chat_app; SHOW TABLES;"
 ```
 
+### **How to get an ngrok auth token**
+1. Install ngrok with the following command:
+- Mac OS
+ - Install homebrew:
+ ```bash
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+ ```
+ - Install ngrok
+ ```bash
+        brew install ngrok/ngrok/ngrok
+ ```
+ - Verify that it was installed:
+ ```bash
+        ngrok --version
+ ```
+
+- windows
+ - Got to the [ngrok](https://ngrok.com/download/windows) official site and follow download instructions
+
+After installing ngrok, login to your account using the following command:
+```bash
+        ngrok config add-authtoken <your-auth-token>
+```
+
+- Get your auth token from: https://dashboard.ngrok.com/login, under getting started > your auth token.
+
 ### **How to run the sever**
 TODO: Add instructions for running the server
+
+
+### **How to run the client**
+Run the following command:
+```make client
+```
+or alternatively,
+```python3 Client.py
+```
 
 
 ### **General program workflow**
