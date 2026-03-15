@@ -3,6 +3,7 @@ import threading
 import os
 import ngrok
 from dotenv import load_dotenv
+import time
 
 load_dotenv()  # make sure NGROK_AUTHTOKEN from .env is in the environment
 
@@ -10,6 +11,24 @@ CHUNK_SIZE = 65_536  # 64 KB per chunk
 
 # All received files land here; directory is created on first use.
 SAVE_DIR = os.path.expanduser("~/Downloads/group81")
+
+
+def _stream_file(conn, file_path: str, filename: str) -> None:
+    try:
+        with open(file_path, "rb") as f:
+            while True:
+                chunk = f.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                conn.sendall(struct.pack(">I", len(chunk)) + chunk)
+        conn.sendall(struct.pack(">I", 0))  # EOF marker
+    except Exception as e:
+        print(f"[P2P] Send error: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str) -> None:
@@ -30,12 +49,12 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
     filename = os.path.basename(file_path)
 
     # 1. Bind a local TCP listener on any free port
-    from socket import socket as _socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+    from socket import socket as _socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, timeout as _socket_timeout
     listener = _socket(AF_INET, SOCK_STREAM)
     listener.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     listener.bind(("", 0))
     local_port = listener.getsockname()[1]
-    listener.listen(1)
+    listener.listen(20)
 
     # 2. Open an ngrok TCP tunnel to that local port.
     #    Use NGROK_AUTHTOKEN_P2P if set (a second account), otherwise fall back
@@ -69,14 +88,7 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
         try:
             conn, addr = listener.accept()
             print(f"[P2P] Recipient connected. Sending '{filename}'…")
-            with open(file_path, "rb") as f:
-                while True:
-                    chunk = f.read(CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    conn.sendall(struct.pack(">I", len(chunk)) + chunk)
-            conn.sendall(struct.pack(">I", 0))  # EOF marker
-            conn.close()
+            _stream_file(conn, file_path, filename)
             print(f"[P2P] '{filename}' sent successfully.")
         except Exception as e:
             print(f"[P2P] Send error: {e}")
@@ -85,6 +97,69 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
             ngrok.disconnect(public_url)   # close the tunnel when done
 
     threading.Thread(target=_stream, daemon=True).start()
+
+
+def send_group_blob(file_path: str, clientSocket, my_username: str, group_id: str, keep_open_seconds: int = 120) -> None:
+    if not os.path.isfile(file_path):
+        print(f"[P2P] File not found: {file_path}")
+        return
+
+    filename = os.path.basename(file_path)
+
+    from socket import socket as _socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+    listener = _socket(AF_INET, SOCK_STREAM)
+    listener.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    listener.bind(("", 0))
+    local_port = listener.getsockname()[1]
+    listener.listen(20)
+    listener.settimeout(1.0)
+
+    authtoken = os.getenv("NGROK_AUTHTOKEN_P2P") or os.getenv("NGROK_AUTHTOKEN")
+    if not authtoken:
+        print("[P2P] No ngrok authtoken found. Set NGROK_AUTHTOKEN_P2P in .env.")
+        listener.close()
+        return
+
+    try:
+        tunnel = ngrok.forward(local_port, proto="tcp", authtoken=authtoken)
+    except Exception as e:
+        print(f"[P2P] Could not open ngrok tunnel: {e}")
+        listener.close()
+        return
+
+    public_url = tunnel.url()
+    host_port = public_url.replace("tcp://", "")
+    ngrok_host, ngrok_port = host_port.rsplit(":", 1)
+
+    msg = f"GROUP_SEND_BLOB\n{group_id}\n{filename}\n{ngrok_host}\n{ngrok_port}\n\n"
+    clientSocket.sendall(msg.encode())
+    print(f"[P2P] Group tunnel open at {public_url}. Waiting for receivers…")
+
+    def _accept_loop():
+        deadline = time.time() + max(1, int(keep_open_seconds))
+        try:
+            while time.time() < deadline:
+                try:
+                    conn, addr = listener.accept()
+                except _socket_timeout:
+                    continue
+                except OSError:
+                    break
+                print(f"[P2P] Receiver connected. Sending '{filename}'…")
+                threading.Thread(target=_stream_file, args=(conn, file_path, filename), daemon=True).start()
+        except Exception as e:
+            print(f"[P2P] Group send error: {e}")
+        finally:
+            try:
+                listener.close()
+            except Exception:
+                pass
+            try:
+                ngrok.disconnect(public_url)
+            except Exception:
+                pass
+
+    threading.Thread(target=_accept_loop, daemon=True).start()
 
 
 def receive_blob(host: str, port: int, filename: str) -> str | None:

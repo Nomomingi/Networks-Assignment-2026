@@ -1,4 +1,7 @@
 mysql-connector-python
 python-dotenv
 ngrok
+pyfiglet
+termcolor
+rich
 aiohttp

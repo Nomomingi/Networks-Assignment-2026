@@ -211,7 +211,88 @@ class DB:
             (sender_id, receiver_id),
         )
         cursor.close()
+    
+    def create_group(self, group_name: str, creator_id: int):
+        cursor = self._cursor()
+        cursor.execute( "INSERT INTO GroupChat (group_name, created_by) VALUES (%s, %s)", (group_name, creator_id),)
+        group_id = cursor.lastrowid
+        cursor.close()
+    
+        self.add_user_to_group(group_id, creator_id)
+        return group_id
+    
+    def add_user_to_group(self, group_id: int, user_id: int):
+        cursor = self._cursor()
+        cursor.execute("INSERT INTO GroupChatMembers (group_id, user_id) VALUES (%s, %s)", (group_id, user_id),)
+        cursor.close()
+    
+    def get_user_groups(self, user_id: int):
+        cursor = self._cursor()
+        cursor.execute(
+            """
+            SELECT gc.group_id, gc.group_name
+            FROM GroupChat gc
+            JOIN GroupChatMembers gcm ON gc.group_id = gcm.group_id
+            WHERE gcm.user_id = %s
+            ORDER BY gc.group_name ASC
+            """,
+            (user_id,),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+    
+    def store_group_message(self, group_id: int, sender_id: int, message_text: str, blob: Blob = None):
+        if not blob and not message_text:
+            raise ValueError("Either message text or file must be provided.")
+        
+        media_data = blob.convert_to_binary_data() if blob else None
+        cursor = self._cursor()
+        cursor.execute("INSERT INTO GroupMessages (group_id, sender_id, message_text, media) VALUES (%s, %s, %s, %s)", (group_id, sender_id, message_text, media_data),)
+        message_id = cursor.lastrowid
+        cursor.close()
+        return message_id
+    
+    def get_group_messages(self, group_id: int):
+        cursor = self._cursor()
+        cursor.execute(
+            """
+            SELECT u.username, gm.message_text, gm.sent_at
+            FROM GroupMessages gm
+            JOIN Users u ON u.user_id = gm.sender_id
+            WHERE gm.group_id = %s
+            ORDER BY gm.sent_at ASC
+            """,
+            (group_id, ),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+    
+    def get_group_member_usernames(self, group_id: int):
+        cursor = self._cursor()
+        cursor.execute(
+            """
+            SELECT u.username
+            FROM GroupChatMembers gcm
+            JOIN Users u ON u.user_id = gcm.user_id
+            WHERE gcm.group_id = %s
+            ORDER BY u.username ASC
+            """,
+            (group_id, ),
+        )
+        rows = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return rows
 
+    def is_user_in_group(self, group_id: int, user_id: int) -> bool:
+        cursor = self._cursor()
+        cursor.execute("SELECT 1 FROM GroupChatMembers WHERE group_id = %s AND user_id = %s", (group_id, user_id),)
+        row = cursor.fetchone()
+        cursor.close()
+        return row is not None
+
+    
     def close(self):
         try:
             self.connection.close()

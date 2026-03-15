@@ -3,13 +3,22 @@ import Protocol # Custom made, see Protocol.py
 import threading
 from db import DB
 import time
+import traceback
 
 online_users = {} # A dictionary to store the online users, and their sockets as a value.
 users_last_seen = {} # A dictionary to store when last they were seen on the server.
 online_lock = threading.Lock()
 active_chats = {}
 chat_lock = threading.Lock()
+active_groups = {}
+group_lock = threading.Lock()
 SLEEPY_TIME = 20 # Constant for the time taken for a user to sleep.
+
+def _proto(num: int) -> str | None:
+    try:
+        return Protocol.initiate_protocol(num)
+    except Exception:
+        return None
 
 # Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
@@ -28,36 +37,55 @@ def handle_client(connectionSocket: socket, address: tuple):
     
             action = temp[0].strip() # Tells the server what action the user wants to perform
             
-            if action == Protocol.initiate_protocol(1): # LOGIN
+            if action == _proto(1): # LOGIN
                 username = handle_login(connectionSocket, temp, username, db_local)
 
-            elif action == Protocol.initiate_protocol(2): #CREATE
+            elif action == _proto(2): #CREATE
                 handle_account_creation(connectionSocket, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(3): #CLOSE
+            elif action == _proto(3): #CLOSE
                 handle_program_close(connectionSocket)
                 break # Stop handling this client
-            elif action == Protocol.initiate_protocol(4): #PRIVATE
+            elif action == _proto(4): #PRIVATE
                 handle_private_message(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(5): #SEARCH
+            elif action == _proto(5): #SEARCH
                 handle_search(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(8): #OPEN_CHAT
+            elif action == _proto(8): #OPEN_CHAT
                 handle_open_chat(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(9): #CLOSE_CHAT
+            elif action == _proto(9): #CLOSE_CHAT
                 handle_close_chat(connectionSocket, username, temp)
 
-            elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
+            elif action == _proto(6): #CoNTACTS - People who you've chatted with
                 handle_get_contacts(connectionSocket, username, db_local)
 
-            elif action == Protocol.initiate_protocol(10): #SEND_BLOB - relay ngrok address to recipient
+            elif action == _proto(10): #SEND_BLOB - relay ngrok address to recipient
                 handle_send_blob(connectionSocket, username, temp)
 
+            elif action == _proto(12):
+                handle_group_create(connectionSocket, username, temp, db_local)
+            
+            elif action == _proto(13):
+                handle_group_list(connectionSocket, username, db_local)
+            
+            elif action == _proto(14):
+                handle_group_open(connectionSocket, username, temp, db_local)
+            
+            elif action == _proto(15):
+                handle_group_message(connectionSocket, username, temp, db_local)
+            
+            elif action == _proto(16):
+                handle_group_close(connectionSocket, username, temp)
+            elif action == _proto(17):
+                handle_group_add_member(connectionSocket, username, temp, db_local)
+            elif action == _proto(18):
+                handle_group_send_blob(connectionSocket, username, temp, db_local)
             else:
                 send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
+        traceback.print_exc()
         try:
             send_message(connectionSocket, "ERROR|SERVER_EXCEPTION\n\n")
         except:
@@ -70,6 +98,9 @@ def handle_client(connectionSocket: socket, address: tuple):
             with chat_lock:
                 if username in active_chats:
                     del active_chats[username]
+            with group_lock:
+                if username in active_groups:
+                    del active_groups[username]
         try:
             db_local.close()
         except:
@@ -101,7 +132,6 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
         return current_user
     
     with online_lock:
-        old = online_users.get(u)
         online_users[u] = connectionSocket
         users_last_seen[u] = time.time() # The current time.
     
@@ -270,6 +300,285 @@ def handle_private_message(connectionSocket: socket, sender_username: str | None
             send_message(connectionSocket, "OK|PRIVATE_STORED\n\n")
     except Exception:
         send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_group_create(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    if len(temp) < 2:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_CREATE_FORMAT\n\n")
+        return
+    
+    group_name = temp[1].strip()
+    member_usernames = [name.strip() for name in temp[2: ] if name.strip()]
+
+    if not group_name:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_NAME\n\n")
+        return
+    
+    try:
+        creator_row = db_local.get_user_by_username(username)
+        if not creator_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+        creator_id = creator_row[0]
+        group_id = db_local.create_group(group_name, creator_id)
+
+        added_members = []
+        for member_username in member_usernames:
+            member_row = db_local.get_user_by_username(member_username)
+            if member_row:
+                member_id = member_row[0]
+                try:
+                    db_local.add_user_to_group(group_id, member_id)
+                    added_members.append(member_username)
+                except Exception:
+                    pass
+        send_message(connectionSocket, f"OK|GROUP_CREATED|{group_id}\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_group_list(connectionSocket: socket, username: str | None, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    try:
+        user_row = db_local.get_user_by_username(username)
+        if not user_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+        
+        user_id = user_row[0]
+        groups = db_local.get_user_groups(user_id)
+
+        lines = ["OK|GROUPS"]
+        for group_id, group_name in groups:
+            lines.append(f"{group_id}|{group_name}")
+
+        send_message(connectionSocket, "\n".join(lines) + "\n\n")
+
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+         
+def handle_group_open(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    if len(temp) < 2:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_OPEN_FORMAT\n\n")
+        return
+    
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+    
+    try:
+        user_row = db_local.get_user_by_username(username)
+        if not user_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+        
+        user_id = user_row[0]
+        if not db_local.is_user_in_group(group_id, user_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+        
+        with group_lock:
+            active_groups[username] = group_id
+        history = db_local.get_group_messages(group_id)
+        lines = ["OK|GROUP_HISTORY"]
+        for sender_username, message_text, sent_at in history:
+            lines.append(f"{sender_username}|{message_text}|{sent_at}")
+        send_message(connectionSocket, "\n".join(lines) + "\n\n")
+
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+    
+def handle_group_message(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    if len(temp) < 3:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_MESSAGE_FORMAT\n\n")
+        return
+    
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+    
+    message_text = temp[2].strip()
+    if not message_text:
+        send_message(connectionSocket, "ERROR|EMPTY_GROUP_MESSAGE\n\n")
+        return
+    
+    try:
+        sender_row = db_local.get_user_by_username(username)
+        if not sender_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+        
+        sender_id = sender_row[0]
+
+        if not db_local.is_user_in_group(group_id, sender_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+        
+        db_local.store_group_message(group_id, sender_id, message_text)
+        member_rows = db_local.get_group_members(group_id)
+
+        recipients = []
+        with group_lock:
+            for _group_id, member_user_id, *_ in member_rows:
+                member_user = db_local.get_user_by_id(member_user_id)
+                if not member_user:
+                    continue
+                member_username = member_user[1]
+
+                if member_username == username:
+                    continue
+
+                if active_groups.get(member_username) == group_id:
+                    recipients.append(member_username)
+        
+        with online_lock:
+            recipient_sockets = [online_users[member_username] for member_username in recipients if member_username in online_users]
+        
+        for sock in recipient_sockets:
+            send_message(sock, f"INCOMING_GROUP\n{group_id}\n{username}\n{message_text}\n\n")
+        
+        send_message(connectionSocket, "OK|GROUP_MESSAGE_SENT\n\n")
+
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_group_close(connectionSocket: socket, username: str | None, temp: list):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+    
+    with group_lock:
+        if username in active_groups:
+            del active_groups[username]
+    
+    send_message(connectionSocket, "OK|GROUP_CLOSED\n\n")
+
+def handle_group_add_member(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 3:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ADD_MEMBER_FORMAT\n\n")
+        return
+
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+
+    member_username = temp[2].strip()
+    if not member_username:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ADD_MEMBER_FORMAT\n\n")
+        return
+
+    try:
+        requester_row = db_local.get_user_by_username(username)
+        if not requester_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+
+        requester_id = requester_row[0]
+        if not db_local.is_user_in_group(group_id, requester_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+
+        member_row = db_local.get_user_by_username(member_username)
+        if not member_row:
+            send_message(connectionSocket, "ERROR|NO_SUCH_USER\n\n")
+            return
+
+        member_id = member_row[0]
+        if db_local.is_user_in_group(group_id, member_id):
+            send_message(connectionSocket, "ERROR|ALREADY_IN_GROUP\n\n")
+            return
+
+        db_local.add_user_to_group(group_id, member_id)
+        send_message(connectionSocket, "OK|MEMBER_ADDED\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
+def handle_group_send_blob(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 5:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_BLOB_FORMAT\n\n")
+        return
+
+    try:
+        group_id = int(temp[1].strip())
+    except ValueError:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_ID\n\n")
+        return
+
+    filename = temp[2].strip()
+    ngrok_host = temp[3].strip()
+    ngrok_port = temp[4].strip()
+    if not filename or not ngrok_host or not ngrok_port:
+        send_message(connectionSocket, "ERROR|INVALID_GROUP_BLOB_FORMAT\n\n")
+        return
+
+    try:
+        sender_row = db_local.get_user_by_username(username)
+        if not sender_row:
+            send_message(connectionSocket, "ERROR|USER_NOT_FOUND\n\n")
+            return
+
+        sender_id = sender_row[0]
+        if not db_local.is_user_in_group(group_id, sender_id):
+            send_message(connectionSocket, "ERROR|NOT_IN_GROUP\n\n")
+            return
+
+        member_rows = db_local.get_group_members(group_id)
+
+        recipients = []
+        with group_lock:
+            for _group_id, member_user_id, *_ in member_rows:
+                member_user = db_local.get_user_by_id(member_user_id)
+                if not member_user:
+                    continue
+                member_username = member_user[1]
+
+                if member_username == username:
+                    continue
+
+                # Option A: only users currently inside this group chat
+                if active_groups.get(member_username) == group_id:
+                    recipients.append(member_username)
+
+        with online_lock:
+            recipient_sockets = [online_users[u] for u in recipients if u in online_users]
+
+        for sock in recipient_sockets:
+            send_message(
+                sock,
+                f"GROUP_BLOB_OFFER\n{group_id}\n{username}\n{ngrok_host}\n{ngrok_port}\n{filename}\n\n",
+            )
+
+        send_message(connectionSocket, "OK|GROUP_BLOB_NOTIFY_SENT\n\n")
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+
 def handle_send_blob(connectionSocket: socket, sender_username: str | None, temp: list):
     """
     Pure signaling relay — the server never sees file data.
@@ -315,7 +624,6 @@ def handle_send_blob(connectionSocket: socket, sender_username: str | None, temp
     except Exception:
         send_message(connectionSocket, "ERROR|NOTIFY_FAILED\n\n")
 
-
 # This is largely for the sake of achieving the 'Ping' effect with our chats.
 # The good thing about this entire scenario is that we only need to store the effect as:
 # PING|Username
@@ -329,6 +637,7 @@ def udp_server() -> None:
         message = temp.decode().strip().split("|")
         if message[0] == Protocol.initiate_protocol(7): # PING
             username = message[1]
+            print(f"Username [{username}] pinged at [{time.time()}]")
             with online_lock:
                 if username in users_last_seen:
                     users_last_seen[username] = time.time()
@@ -354,11 +663,10 @@ def main():
     serverSocket.listen(5)
     print("The TCP server is up and running.")
 
-    #udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
-    #sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
-    #udpThread.start()
-    #sleepyThread.start()
-
+    udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
+    sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
+    udpThread.start()
+    sleepyThread.start()
 
     while True:
         connectionSocket, addr = serverSocket.accept()

@@ -15,6 +15,13 @@ class Protocol(Enum):
     CLOSE_CHAT = 9
     SEND_BLOB= 10
     RECIEVE_BLOB = 11
+    GROUP_CREATE = 12
+    GROUP_LIST = 13
+    GROUP_OPEN = 14
+    GROUP_MESSAGE = 15
+    GROUP_CLOSE = 16
+    GROUP_ADD_MEMBER = 17
+    GROUP_SEND_BLOB = 18
 
 # Returns string representation of a given protocol.
 # TODO: Change name.
