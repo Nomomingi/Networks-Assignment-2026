@@ -62,10 +62,13 @@ TODO: Add instructions for running the server
 
 ### **How to run the client**
 Run the following command:
-```make client
+```bash
+        make client
 ```
 or alternatively,
-```python3 Client.py
+
+```bash
+        python3 Client.py
 ```
 
 
