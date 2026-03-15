@@ -1,4 +1,0 @@
-auto login on acc create
-group chat errors\much better exist flow
-alert wether user valid on insert
-

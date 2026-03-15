@@ -1,191 +1,54 @@
-# Networks Assignment — Group 81
+# **Networks Assignment 1**
 
-**Team:** Paul Kabulu · Chandik Naidoo · Makolela Shibambu
+- Paul Kabulu
+- Chandik Naidoo
+- Makolela Shibambu 
 
-A full-stack instant messaging application with a Python TCP backend, React web frontend, P2P file sharing, and real-time WebSocket messaging.
+This is the repo for the complete source code of our Networks Assignment 1.
 
----
 
-## Architecture Overview
+### **Prerequisites:**
+- Make sure you have mysql set up on your machine.
+- Make sure you have ngrok installed on your machine.
 
-```
-React Web Client (Vite, port 5173)
-        │  HTTP / WebSocket
-        ▼
-HTTP Bridge  (api_bridge.py, port 8000)
-        │  raw TCP (custom protocol)
-        ▼
-Chat Server  (Server.py, port 14532)   ←→  MySQL DB
-        │
-        └──  P2P File Transfer (ngrok TCP tunnel, p2p.py)
-```
+### **Steps to set up the application**
+**Note:** Make sure you're running a **unix based terminal** in order to be able to use make commands. Otherwise, you can watch a YouTube tutorial on the Windows set. Additionally, terminal formatting requires a unix based terminal.
 
----
-
-## Prerequisites
-
-| Tool | Version | Notes |
-|---|---|---|
-| Python | 3.11+ | |
-| Node.js | 18+ | for the React client |
-| MySQL | 8+ | must be running locally |
-| ngrok | any | free account at ngrok.com |
-
----
-
-## 1 — Database Setup
-
-```bash
-# Create the schema
-make db
-
-# (Optional) Populate with seed data
-make seed
-```
-
----
-
-## 2 — Environment Variables
+1. Install the required dependencies using `make requirements`.
+2. Create a `.env` file to store environment variables using the following command (for the tutors, we'll attach our `.env` file with this assignment):
 
 ```bash
 make env
 ```
-
-This creates a `.env` file. Open it and fill in your values:
-
-```ini
-HOST=localhost
-PORT=3306
-DB_USER=root             # your MySQL username
-PASSWORD=                # your MySQL password
-DATABASE=chat_app
-NGROK_AUTHTOKEN=         # from https://dashboard.ngrok.com/get-started/your-authtoken
-NGROK_AUTHTOKEN_P2P=     # second ngrok account token (needed for P2P file transfer)
-```
-
-> **Why two ngrok tokens?** ngrok free accounts allow 1 simultaneous agent session. The main server uses one session; P2P file transfers need a separate session (second free account). Sign up at [ngrok.com](https://ngrok.com) with a different email for the second one.
-
----
-
-## 3 — Python Dependencies
-
+- Update the `.env` file with your mysql username & password, and your ngrok authtoken.
+- The environment variables ensure that our secret info such as passwwords, api keys, etc are not accessible to the public or pushed to github.
+- The `make env` command will not fill in your mysql password, so you should add that manually in the `.env` file. Also just verify that the `DB_USER` and `HOST` variables match your mysql host and user - the one you made during the mysql setup in CSC2001F or whenever you set it up.
+3. Run `make db` to initialise the schema.
+4. (optionally) run `make seed` to populate the db with dummy data.
+5. Test that the db was created by running the following command in your terminal:
 ```bash
-make requirements
+        source .env && mysql -u $DB_USER -p -e "USE chat_app; SHOW TABLES;"
 ```
 
----
+### **How to run the sever**
+The TCP server runs on localhost. We'll use ngrok for port forwarding so that the public has access to our localhost server. So before you begin, amke sure you have ngrok installed.
 
-## 4 — Node Dependencies
+Go to the [ngrok website](https://ngrok.com/) and sign up for an account. Then, follow the instructions to install ngrok on your machine.
 
-```bash
-make client-deps
-```
+1. Run the server and ngrok with `make server`.
+2. The server will start on port 14532 and ngrok will create a tunnel to expose it to the internet.
+3. Copy the ngrok URL and use it in the client to connect to the server. The url should look something like this: `tcp://0.tcp.ngrok.io:12345`. In the `Client.py` file, nagiavte to the `main` funtion definition and update the `serverName` variable to  `<n>.tcp.<region>.ngrok.io` where `<n>` is the number in the url and `<region>` is the region of the url. Set the `serverPort` variable to the port number in the url - the nnumber after the colon.
+4. Run the client with `python3 Client.py`.
 
----
 
-## 5 — ngrok Setup
+### **General program workflow**
+1. Login/Create an account.
+2. Check contacts (people you've chatted withj) or search for an account.
+3. Select the number of the account you want to chat with.
+4. To exit the chat, type `/exit`.
 
-Copy the example config to ngrok's default config location and fill in your authtoken:
+### **GEneral notes**
+THe program is currently incomplete. There are bugs, missing features, and some inconsistencies that need to be adressed. All of these issues will be fixed in the next phase. For the prototype, our MVP was to get private chats working. Other stuff such as group chats and file sharing will follow in the final phase.
 
-```bash
-# macOS / Linux
-cp ngrok.example.yml ~/.config/ngrok/ngrok.yml
-```
-
-Then open `~/.config/ngrok/ngrok.yml` and replace `PASTE_YOUR_NGROK_AUTHTOKEN_HERE` with your token.
-
-> **Free tier note:** `ngrok start --all` runs all 3 tunnels (TCP server + HTTP bridge + React client) in a **single agent session**, which is fully compatible with the free tier.
-
----
-
-## 6 — Running the Application
-
-Open **4 terminals** and run one command in each:
-
-| Terminal | Command | What it does |
-|---|---|---|
-| 1 | `make server` | Python TCP chat server |
-| 2 | `make bridge` | HTTP/WebSocket bridge |
-| 3 | `make client` | React Vite dev server |
-| 4 | `make tunnel` | All ngrok tunnels |
-
-After `make tunnel` starts, ngrok will print something like:
-
-```
-Forwarding   tcp://0.tcp.eu.ngrok.io:12345  →  localhost:14532  (server)
-Forwarding   https://abc-123.ngrok-free.app  →  localhost:8000   (bridge)
-Forwarding   https://def-456.ngrok-free.app  →  localhost:5173   (client)
-```
-
-**Update `client/.env.local`** with the bridge's HTTPS URL before using the web client:
-
-```ini
-VITE_API_URL=https://abc-123.ngrok-free.app
-VITE_WS_URL=wss://abc-123.ngrok-free.app/ws
-```
-
-Restart the Vite dev server (`make client`) so it picks up the new values.
-
-**Share `https://def-456.ngrok-free.app`** with anyone who wants to use the app. They just open it in a browser — no setup required on their end.
-
-> ngrok free tier shows a one-time interstitial page — click "Visit Site" to proceed.
-
----
-
-## Testing Locally (no ngrok needed)
-
-For local testing on the same machine, skip `make tunnel` and use the defaults:
-
-```bash
-make server   # terminal 1
-make bridge   # terminal 2
-make client   # terminal 3
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser. Everything works locally; P2P file transfer will work on LAN but not across different networks.
-
----
-
-## Features
-
-- **Accounts** — create account / login
-- **Private chat** — real-time messages via WebSocket push
-- **Search users** — find anyone by username
-- **File sharing** — P2P transfer via ngrok TCP tunnel (📎 button in chat)
-  - Received files saved to `~/Downloads/group81/`
-- **CLI client** — `python3 Client.py` for the original terminal interface
-
----
-
-## Project Structure
-
-```
-.
-├── Server.py          Python TCP server
-├── Client.py          CLI client
-├── Protocol.py        Message protocol constants
-├── p2p.py             P2P file transfer (ngrok)
-├── api_bridge.py      HTTP/WebSocket ↔ TCP bridge
-├── db.py              MySQL helper
-├── schema.sql         DB schema
-├── seed.sql           Seed data
-├── ngrok.example.yml  Copy to ~/.config/ngrok/ngrok.yml
-├── Makefile           Run targets
-└── client/            React web frontend (Vite + TypeScript)
-    └── src/
-        ├── pages/
-        │   ├── login/
-        │   ├── sign-up/
-        │   └── home/      Main chat UI
-        └── context/
-            └── auth-context.tsx
-```
-
----
-
-## Acknowledgements
-
-Generative AI (Claude, Gemini) was used to assist with:
-- Fixing terminal input/output race conditions in the CLI client
-- Implementing the HTTP bridge and WebSocket real-time layer
-- Styling the React frontend
+### **Acknowledgements**
+st

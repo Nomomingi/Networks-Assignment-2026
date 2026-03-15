@@ -2,6 +2,25 @@ from dotenv import load_dotenv
 import mysql.connector
 import os
 
+"""MySQL database wrapper used by the chat server.
+
+`Server.py` uses this module for all persistence:
+
+- Users (create account, login)
+- Private messages (store history, list contacts, delivery tracking)
+- Group chats (create group, membership, group message history)
+
+Configuration
+Connection settings are read from environment variables (
+ via a `.env` file):
+
+- `HOST`
+- `DB_USER`
+- `PASSWORD`
+- `DATABASE`
+- `PORT`
+"""
+
 load_dotenv()
 
 HOST = os.getenv("HOST")
@@ -20,6 +39,11 @@ class Blob:
         return binary_data
 
 class DB:
+    """Thin wrapper around `mysql.connector`.
+
+    The server creates a `DB` instance and calls methods on it from handler
+    threads.
+    """
     def __init__(self, host=HOST, user=USER, password=PASSWORD, database=DATABASE, port=PORT):
         self.connection = mysql.connector.connect(
             host=host,
@@ -132,6 +156,11 @@ class DB:
     # --------------------------------------------------------------- messages
 
     def store_private_message(self, sender_id, receiver_id, message_text, blob: Blob = None, delivered: int = 0):
+        """Insert a private message.
+
+        The server uses `delivered` to track whether a message was pushed in
+        realtime to an active chat.
+        """
         if not blob and not message_text:
             raise ValueError("Either message text or file must be provided.")
         media_data = blob.convert_to_binary_data() if blob else None
@@ -205,6 +234,7 @@ class DB:
         cursor.close()
 
     def mark_pm_delivered_between(self, sender_id, receiver_id):
+        """Mark all undelivered messages from sender->receiver as delivered."""
         cursor = self._cursor()
         cursor.execute(
             "UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE sender_id = %s AND receiver_id = %s AND delivered = 0",
@@ -213,6 +243,7 @@ class DB:
         cursor.close()
     
     def create_group(self, group_name: str, creator_id: int):
+        """Create a group chat and add the creator as the first member."""
         cursor = self._cursor()
         cursor.execute( "INSERT INTO GroupChat (group_name, created_by) VALUES (%s, %s)", (group_name, creator_id),)
         group_id = cursor.lastrowid
@@ -227,6 +258,7 @@ class DB:
         cursor.close()
     
     def get_user_groups(self, user_id: int):
+        """Return `(group_id, group_name)` rows for groups the user belongs to."""
         cursor = self._cursor()
         cursor.execute(
             """
@@ -243,6 +275,7 @@ class DB:
         return rows
     
     def store_group_message(self, group_id: int, sender_id: int, message_text: str, blob: Blob = None):
+        """Insert a group message into `GroupMessages`."""
         if not blob and not message_text:
             raise ValueError("Either message text or file must be provided.")
         
@@ -254,6 +287,7 @@ class DB:
         return message_id
     
     def get_group_messages(self, group_id: int):
+        """Return ordered message history for a group."""
         cursor = self._cursor()
         cursor.execute(
             """
@@ -270,6 +304,7 @@ class DB:
         return rows
     
     def get_group_member_usernames(self, group_id: int):
+        """Return usernames of all members of a group (sorted)."""
         cursor = self._cursor()
         cursor.execute(
             """
@@ -286,6 +321,7 @@ class DB:
         return rows
 
     def is_user_in_group(self, group_id: int, user_id: int) -> bool:
+        """Return True if the given user is a member of the given group."""
         cursor = self._cursor()
         cursor.execute("SELECT 1 FROM GroupChatMembers WHERE group_id = %s AND user_id = %s", (group_id, user_id),)
         row = cursor.fetchone()
@@ -294,6 +330,7 @@ class DB:
 
     
     def close(self):
+        '''Close the MySQL connection.'''
         try:
             self.connection.close()
         except Exception as e:

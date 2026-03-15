@@ -1,6 +1,29 @@
 # The client program, which must be run after the server. 
 # Using ngrok means we need to change both the Server Port and Server Name during each test.
 
+"""Terminal client for the chat application.
+
+This client connects to `Server.py` over TCP and speaks a simple text protocol.
+
+Packet framing
+- Messages are sent as multiple lines separated by `\n`.
+- Each packet ends with a blank line (`\n\n`).
+- Line 0 is always the action (e.g. `LOGIN`, `PRIVATE`, `GROUP_MESSAGE`).
+
+Program structure
+- The UI is a small *state machine*.
+- The global `currentState` determines which menu or chat loop runs.
+- `state_control()` repeatedly dispatches to the handler for the active state.
+
+Realtime behavior
+- During private/group chats, a background receiver thread reads packets from
+  the server and prints incoming messages while you type.
+
+File transfer
+- Files are transferred peer-to-peer using `p2p.py` and ngrok.
+- The server is only used for signaling (sharing the ngrok host/port).
+"""
+
 # These modules in particular are used to modify the output in the terminal.
 import sys
 from termcolor import colored, cprint
@@ -107,6 +130,11 @@ def load_main_menu(clientSocket: socket) -> None:
 
 # Logs the given user to their account.
 def log_in(clientSocket: socket) -> None:
+    """Prompt for username/password and send a `LOGIN` request.
+
+    On success, starts a background UDP ping thread (`send_ping`) so the server
+    can track that this user is still active.
+    """
     global currentState
     global username
 
@@ -139,6 +167,7 @@ def log_in(clientSocket: socket) -> None:
 
 # Made independently from the log_in function just for sanity's sake.
 def create_account(clientSocket: socket) -> None:
+    """Prompt for username/password and send a `CREATE` request."""
     global currentState
     global username
 
@@ -214,8 +243,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
         currentState = ClientStates.State.CLOSE
 
 def handle_user_contacts(clientSocket, username) -> None:
-    '''Displays the contacts of the user (if any). '''
-
+    '''Show contacts and start a private chat with the selected user.'''
     global peer_username
     global currentState
 
@@ -492,6 +520,17 @@ def handle_search(clientSocket: socket, username: str) -> None:
             print("Please enter a valid number.")
 
 def handle_group_making(clientSocket: socket, username: str) -> None:
+    """Create a group chat.
+
+    Builds a `GROUP_CREATE` packet:
+        GROUP_CREATE
+        <group_name>
+        <member_username>
+        <member_username>
+        ...
+
+    The server returns `OK|GROUP_CREATED|<group_id>`.
+    """
     global currentState
 
     group_name = input("Enter group name: ").strip()
@@ -804,6 +843,7 @@ def close_program(clientSocket: socket) -> None:
     pass
 
 def main():
+    """Connect to the TCP server and start the UI state machine."""
     try:
         serverName = SERVER_NAME
         serverPort = TCP_SERVER_PORT
@@ -819,21 +859,25 @@ def main():
 
 # Sends a message to the server for simplicity. Good for small messages
 def send_message(clientSocket: socket, message: str) -> None:
+    '''Send a TCP message to the server.'''
     clientSocket.sendall(message.encode())
     pass
 
 # UDP equivalent of the send_message method. 
 def send_message_udp(message: str, udpSocket: socket, ip: str, port: int) -> None:
+    '''Send a UDP datagram (used for pings).'''
     udpSocket.sendto(message.encode(), (ip, port))
     pass
 
 # Receives a message from the server.
 def receive_message(clientSocket: socket) -> str:
+    '''Receive a TCP message chunk (up to 1024 bytes).'''
     return clientSocket.recv(1024).decode()
 
 # Much more elaborate variation of the receive_packet method,
 # which receives the entire message in chunks rather than preemptively truncating it.
 def receive_packet(clientSocket: socket) -> list:
+    '''Receive a full \n\n-terminated packet and split it into lines.'''
     data = ""
     while True:
         chunk = clientSocket.recv(1024).decode(errors="ignore")
@@ -847,6 +891,14 @@ def receive_packet(clientSocket: socket) -> list:
 
 # Client side implementation of the ping system for UDP.
 def send_ping(username: str, event: threading.Event) -> None:
+    """Background UDP ping loop.
+
+    Every `PING_TIME` seconds this sends:
+        `PING|<username>`
+
+    to the server's UDP port. The server uses this to time users out when they
+    stop sending pings.
+    """
     clientSocket = socket(AF_INET, SOCK_DGRAM)
     try:
         while not event.is_set():

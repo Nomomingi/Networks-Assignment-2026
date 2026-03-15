@@ -5,6 +5,34 @@ import ngrok
 from dotenv import load_dotenv
 import time
 
+"""Peer-to-peer file transfer utilities (ngrok + direct TCP).
+
+This project deliberately does *not* send file bytes through the main chat
+server.
+
+Instead:
+- The sender opens a local TCP listener.
+- The sender exposes that listener via an ngrok TCP tunnel.
+- The sender tells the main server the tunnel host/port ("signaling").
+- The receiver connects directly to the sender's ngrok endpoint and downloads.
+
+Why this design?
+- It keeps the central server simple.
+- It avoids storing large media blobs on the server.
+- It works for clients behind NAT because ngrok provides a public endpoint.
+
+Direct transfer wire format
+- The sender streams the file as a sequence of framed chunks:
+    [4-byte big-endian length][payload]
+    [4-byte big-endian length][payload]
+    ...
+    [4-byte length = 0]   (EOF marker)
+
+Assited by Claude AI for this implementation. Previous implementaion only allowed for sharing on LAN.
+
+Important note, the files are stored in the downloads/group81 folder. Since our program will require users to run a unix based terminal, Windows userrs should check their WSL downloads folder for recived blobs.
+"""
+
 load_dotenv()  # make sure NGROK_AUTHTOKEN from .env is in the environment
 
 CHUNK_SIZE = 65_536  # 64 KB per chunk
@@ -14,6 +42,11 @@ SAVE_DIR = os.path.expanduser("~/Downloads/group81")
 
 
 def _stream_file(conn, file_path: str, filename: str) -> None:
+    """Send `file_path` over an already-accepted TCP connection.
+
+    This does the actual streaming using the chunk framing format described in
+    the module docstring.
+    """
     try:
         with open(file_path, "rb") as f:
             while True:
@@ -38,9 +71,10 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
     the recipient. The recipient connects directly to the ngrok URL — no data
     goes through the main server.
 
-    Chunk protocol on the direct P2P connection:
+
+     Chunk protocol on the direct P2P connection:
         [4-byte big-endian length][data]  ...repeated...
-        [4-byte 0x00000000]               <- EOF
+        [4-byte 0x00000000]   <- EOF
     """
     if not os.path.isfile(file_path):
         print(f"[P2P] File not found: {file_path}")
@@ -100,6 +134,15 @@ def send_blob(file_path: str, clientSocket, my_username: str, peer_username: str
 
 
 def send_group_blob(file_path: str, clientSocket, my_username: str, group_id: str, keep_open_seconds: int = 120) -> None:
+    """Send a file offer to a group using one shared tunnel.
+
+    Implementation strategy:
+- Create a single ngrok tunnel to one local listener.
+- Notify the server (`GROUP_SEND_BLOB`) so it can broadcast the offer to active
+  group members.
+- Keep the listener open for `keep_open_seconds` and accept multiple inbound
+  connections. Each receiver gets its own streaming thread.
+    """
     if not os.path.isfile(file_path):
         print(f"[P2P] File not found: {file_path}")
         return
@@ -141,7 +184,8 @@ def send_group_blob(file_path: str, clientSocket, my_username: str, group_id: st
             while time.time() < deadline:
                 try:
                     conn, addr = listener.accept()
-                except _socket_timeout:
+                except Exception as e:
+                    print(f"[P2P] Accept error: {e}")
                     continue
                 except OSError:
                     break
@@ -171,7 +215,6 @@ def receive_blob(host: str, port: int, filename: str) -> str | None:
 
     os.makedirs(SAVE_DIR, exist_ok=True)
 
-    # Avoid overwriting existing files by appending a counter
     base, ext = os.path.splitext(filename)
     save_path = os.path.join(SAVE_DIR, filename)
     counter = 1
@@ -206,7 +249,11 @@ def receive_blob(host: str, port: int, filename: str) -> str | None:
 
 
 def _recv_exact(sock, n: int) -> bytes | None:
-    """Read exactly n bytes from sock, or return None if the connection closes."""
+    """Read exactly `n` bytes from `sock`.
+
+    Returns `None` if the peer closes the connection before we receive all
+    required bytes.
+    """
     buf = b""
     while len(buf) < n:
         piece = sock.recv(n - len(buf))
