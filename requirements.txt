@@ -4,3 +4,4 @@ ngrok
 pyfiglet
 termcolor
 rich
+aiohttp
