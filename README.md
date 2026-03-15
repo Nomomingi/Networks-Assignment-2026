@@ -31,14 +31,7 @@ make env
 ```
 
 ### **How to run the sever**
-The TCP server runs on localhost. We'll use ngrok for port forwarding so that the public has access to our localhost server. So before you begin, amke sure you have ngrok installed.
-
-Go to the [ngrok website](https://ngrok.com/) and sign up for an account. Then, follow the instructions to install ngrok on your machine.
-
-1. Run the server and ngrok with `make server`.
-2. The server will start on port 14532 and ngrok will create a tunnel to expose it to the internet.
-3. Copy the ngrok URL and use it in the client to connect to the server. The url should look something like this: `tcp://0.tcp.ngrok.io:12345`. In the `Client.py` file, nagiavte to the `main` funtion definition and update the `serverName` variable to  `<n>.tcp.<region>.ngrok.io` where `<n>` is the number in the url and `<region>` is the region of the url. Set the `serverPort` variable to the port number in the url - the nnumber after the colon.
-4. Run the client with `python3 Client.py`.
+TODO: Add instructions for running the server
 
 
 ### **General program workflow**
@@ -47,8 +40,3 @@ Go to the [ngrok website](https://ngrok.com/) and sign up for an account. Then, 
 3. Select the number of the account you want to chat with.
 4. To exit the chat, type `/exit`.
 
-### **GEneral notes**
-THe program is currently incomplete. There are bugs, missing features, and some inconsistencies that need to be adressed. All of these issues will be fixed in the next phase. For the prototype, our MVP was to get private chats working. Other stuff such as group chats and file sharing will follow in the final phase.
-
-### **Acknowledgements**
-st
