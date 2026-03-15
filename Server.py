@@ -208,7 +208,10 @@ def handle_get_contacts(connectionSocket: socket, username: str | None, db_local
 
     lines = ["OK|CONTACTS"]
     for _contact_id, contact_username in contacts:
-        lines.append(str(contact_username))
+        with online_lock:
+            status = "ONLINE" if contact_username in online_users else "OFFLINE"
+        lines.append(f"{contact_username}|{status}") # Important for determining if the user is online or not.
+
     send_message(connectionSocket, "\n".join(lines) + "\n\n")
 
 def handle_search(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
