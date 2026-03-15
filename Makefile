@@ -7,9 +7,6 @@ seed:
 requirements:
 	pip3 install -r requirements.txt
 
-client-deps:
-	cd client && npm install
-
 env:
 	echo "HOST=localhost\nPORT=3306\nDB_USER=root\nPASSWORD=\nDATABASE=chat_app\nNGROK_AUTHTOKEN=\nNGROK_AUTHTOKEN_P2P=" > .env
 
@@ -19,14 +16,12 @@ env:
 server:
 	python3 Server.py
 
-# Start the HTTP/WebSocket bridge (translates REST ↔ TCP)
-bridge:
-	python3 api_bridge.py
-
-# Start the React web client (Vite dev server)
+#
 client:
-	cd client && npm run dev
+	python3 Client.py
 
+
+# ---- The ngrok tunnels are no longer used as before. They were used when we tried to implement a web based gui, but we switchted to terminal based gui. ---- IGNORE ---
 # Start all three ngrok tunnels in one session (free-tier compatible).
 # Requires ngrok v3 config at ~/Library/Application Support/ngrok/ngrok.yml
 # Copy with:  cp ngrok.yml ~/Library/Application\ Support/ngrok/ngrok.yml
